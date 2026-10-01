@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-export default function LoginScreen({ navigation }: any) {
+export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,14 +21,18 @@ export default function LoginScreen({ navigation }: any) {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Login failed', error.message);
-      return;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) {
+        Alert.alert('Login failed', error.message);
+        return;
+      }
+    } catch {
+      Alert.alert('Login failed', 'Unable to connect. Check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-    // Auth state listener in App.tsx will redirect to Dashboard automatically
+    // AppNavigator observes auth state and switches to the dashboard.
   }
 
   return (

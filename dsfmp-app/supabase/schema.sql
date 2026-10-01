@@ -10,18 +10,16 @@
 create extension if not exists "pgcrypto";
 
 -- ============================================================
--- RESET
--- Safe to re-run any time during development. Drops everything
--- below (including earlier table names from previous schema
--- versions) before recreating it fresh, so this script can be
--- re-pasted into the SQL editor whenever the design changes,
--- without manually hunting down leftover objects.
+-- DESTRUCTIVE RESET
+-- This development bootstrap drops all application tables and their
+-- data. Do not run it against a database whose data you need to keep.
 -- ============================================================
 drop trigger if exists on_auth_user_created on auth.users;
-drop function if exists handle_new_user();
-drop function if exists record_nfc_scan(text, text, text, uuid, numeric);
-drop function if exists apply_inventory_transaction();
-drop function if exists log_distribution_as_transaction();
+drop function if exists public.handle_new_user() cascade;
+drop function if exists public.has_any_role(text[]) cascade;
+drop function if exists public.record_nfc_scan(text, text, text, uuid, numeric) cascade;
+drop function if exists public.apply_inventory_transaction() cascade;
+drop function if exists public.log_distribution_as_transaction() cascade;
 
 drop table if exists nfc_tag_logs cascade;
 drop table if exists reports cascade;
@@ -112,9 +110,9 @@ create table inventory_items (
 -- ------------------------------------------------------------
 create table inventory_transactions (
   transaction_id uuid primary key default gen_random_uuid(),
-  item_id uuid references inventory_items(item_id) on delete cascade,
+  item_id uuid not null references inventory_items(item_id) on delete cascade,
   transaction_type text not null check (transaction_type in ('received', 'used')),
-  quantity numeric not null,
+  quantity numeric not null check (quantity > 0),
   transaction_date date default current_date,
   recorded_by uuid references users(user_id),
   created_at timestamptz default now()
@@ -129,11 +127,15 @@ begin
       where item_id = new.item_id;
   else
     update inventory_items set quantity_available = quantity_available - new.quantity
-      where item_id = new.item_id;
+      where item_id = new.item_id and quantity_available >= new.quantity;
+    if not found then
+      raise exception 'Insufficient stock for inventory item %', new.item_id
+        using errcode = '23514';
+    end if;
   end if;
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public, pg_temp;
 
 create trigger on_inventory_transaction_insert
   after insert on inventory_transactions
@@ -148,26 +150,29 @@ create trigger on_inventory_transaction_insert
 -- ------------------------------------------------------------
 create table meal_attendance (
   attendance_id uuid primary key default gen_random_uuid(),
-  beneficiary_id uuid references beneficiaries(beneficiary_id) on delete cascade,
+  beneficiary_id uuid not null references beneficiaries(beneficiary_id) on delete cascade,
   nfc_tag_id text,
   device_id text references nfc_devices(device_id),
   recorded_by uuid references users(user_id), -- set when a Coordinator records it manually; null for a device-triggered scan
-  meal_type text default 'lunch',
+  meal_type text not null default 'lunch',
   attendance_date date default current_date,
   status text default 'present',
   created_at timestamptz default now()
 );
+
+create unique index idx_meal_attendance_once_per_meal
+  on meal_attendance(beneficiary_id, attendance_date, meal_type);
 
 -- ------------------------------------------------------------
 -- FOOD_DISTRIBUTION
 -- ------------------------------------------------------------
 create table food_distribution (
   distribution_id uuid primary key default gen_random_uuid(),
-  beneficiary_id uuid references beneficiaries(beneficiary_id),
-  item_id uuid references inventory_items(item_id),
+  beneficiary_id uuid not null references beneficiaries(beneficiary_id),
+  item_id uuid not null references inventory_items(item_id),
   device_id text references nfc_devices(device_id),
   recorded_by uuid references users(user_id),
-  quantity_issued numeric,
+  quantity_issued numeric not null check (quantity_issued > 0),
   distribution_date date default current_date,
   created_at timestamptz default now()
 );
@@ -216,8 +221,8 @@ create table reports (
 create table nfc_tag_logs (
   log_id uuid primary key default gen_random_uuid(),
   nfc_tag_id text,
-  device_id text references nfc_devices(device_id),
-  action_type text, -- 'attendance_recorded' | 'distribution_recorded' | 'unknown_tag' | 'inactive_device' | 'not_eligible'
+  device_id text,
+  action_type text not null, -- Failed scans may come from unregistered devices.
   created_at timestamptz default now()
 );
 
@@ -234,32 +239,79 @@ alter table food_distribution enable row level security;
 alter table reports enable row level security;
 alter table nfc_tag_logs enable row level security;
 
-create policy "Authenticated users can read users"
-  on users for select using (auth.role() = 'authenticated');
+create function public.has_any_role(p_roles text[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.users
+    where auth.uid() is not null
+      and user_id = auth.uid()
+      and status = 'active'
+      and role = any(p_roles)
+  );
+$$;
+revoke all on function public.has_any_role(text[]) from public;
+grant execute on function public.has_any_role(text[]) to anon, authenticated;
 
-create policy "Authenticated read/write beneficiaries"
-  on beneficiaries for all using (auth.role() = 'authenticated');
+create policy "Users can read own profile"
+  on users for select using (user_id = auth.uid());
 
-create policy "Authenticated read/write nfc_devices"
-  on nfc_devices for all using (auth.role() = 'authenticated');
+create policy "Authenticated users can read beneficiaries"
+  on beneficiaries for select using (auth.role() = 'authenticated');
+create policy "Coordinators can manage beneficiaries"
+  on beneficiaries for all
+  using (public.has_any_role(array['admin', 'coordinator']))
+  with check (public.has_any_role(array['admin', 'coordinator']));
 
-create policy "Authenticated read/write inventory_items"
-  on inventory_items for all using (auth.role() = 'authenticated');
+create policy "Authenticated users can read devices"
+  on nfc_devices for select using (auth.role() = 'authenticated');
+create policy "Admins can manage devices"
+  on nfc_devices for all
+  using (public.has_any_role(array['admin']))
+  with check (public.has_any_role(array['admin']));
 
-create policy "Authenticated read/write inventory_transactions"
-  on inventory_transactions for all using (auth.role() = 'authenticated');
+create policy "Authenticated users can read inventory items"
+  on inventory_items for select using (auth.role() = 'authenticated');
+create policy "Inventory officers can manage items"
+  on inventory_items for all
+  using (public.has_any_role(array['admin', 'inventory_officer']))
+  with check (public.has_any_role(array['admin', 'inventory_officer']));
+revoke insert, update, delete on inventory_items from authenticated;
+grant insert (item_name, unit, reorder_level) on inventory_items to authenticated;
+grant update (item_name, unit, reorder_level) on inventory_items to authenticated;
 
-create policy "Authenticated read/write meal_attendance"
-  on meal_attendance for all using (auth.role() = 'authenticated');
+create policy "Authenticated users can read inventory transactions"
+  on inventory_transactions for select using (auth.role() = 'authenticated');
+create policy "Inventory officers can record transactions"
+  on inventory_transactions for insert
+  with check (public.has_any_role(array['admin', 'inventory_officer']));
 
-create policy "Authenticated read/write food_distribution"
-  on food_distribution for all using (auth.role() = 'authenticated');
+create policy "Authenticated users can read attendance"
+  on meal_attendance for select using (auth.role() = 'authenticated');
+create policy "Coordinators can manage attendance"
+  on meal_attendance for all
+  using (public.has_any_role(array['admin', 'coordinator']))
+  with check (public.has_any_role(array['admin', 'coordinator']));
 
-create policy "Authenticated read/write reports"
-  on reports for all using (auth.role() = 'authenticated');
+create policy "Authenticated users can read distributions"
+  on food_distribution for select using (auth.role() = 'authenticated');
+create policy "Coordinators can record distributions"
+  on food_distribution for insert
+  with check (public.has_any_role(array['admin', 'coordinator']));
 
-create policy "Authenticated users can read nfc_tag_logs"
-  on nfc_tag_logs for select using (auth.role() = 'authenticated');
+create policy "Authenticated users can read reports"
+  on reports for select using (auth.role() = 'authenticated');
+create policy "Coordinators can manage reports"
+  on reports for all
+  using (public.has_any_role(array['admin', 'coordinator']))
+  with check (public.has_any_role(array['admin', 'coordinator']));
+
+create policy "Admins can read NFC audit logs"
+  on nfc_tag_logs for select using (public.has_any_role(array['admin']));
 
 -- Note: there is deliberately no policy letting the anon key (used
 -- by the ESP32 readers, which have no user login) write directly to
@@ -285,7 +337,7 @@ begin
   );
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public, pg_temp;
 
 create trigger on_auth_user_created
   after insert on auth.users
@@ -308,17 +360,29 @@ create or replace function record_nfc_scan(
 returns json
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   v_beneficiary beneficiaries%rowtype;
   v_device_status text;
 begin
+  if p_nfc_tag_id is null or btrim(p_nfc_tag_id) = '' then
+    insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
+      values (p_nfc_tag_id, p_device_id, 'invalid_tag');
+    return json_build_object('success', false, 'error', 'invalid_tag');
+  end if;
+
   select status into v_device_status from nfc_devices where device_id = p_device_id;
   if v_device_status is null or v_device_status <> 'active' then
     insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
       values (p_nfc_tag_id, p_device_id, 'inactive_device');
     return json_build_object('success', false, 'error', 'unregistered_or_inactive_device');
+  end if;
+
+  if p_mode is null or p_mode not in ('attendance', 'distribution') then
+    insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
+      values (p_nfc_tag_id, p_device_id, 'invalid_mode');
+    return json_build_object('success', false, 'error', 'invalid_mode');
   end if;
 
   select * into v_beneficiary from beneficiaries where nfc_tag_id = p_nfc_tag_id;
@@ -335,13 +399,27 @@ begin
   end if;
 
   if p_mode = 'distribution' then
+    if p_item_id is null or p_quantity is null or p_quantity <= 0
+      or not exists (select 1 from inventory_items where item_id = p_item_id) then
+      insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
+        values (p_nfc_tag_id, p_device_id, 'invalid_distribution');
+      return json_build_object('success', false, 'error', 'invalid_distribution');
+    end if;
+
+    begin
     insert into food_distribution (beneficiary_id, item_id, device_id, quantity_issued)
       values (v_beneficiary.beneficiary_id, p_item_id, p_device_id, p_quantity);
+    exception when check_violation then
+      insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
+        values (p_nfc_tag_id, p_device_id, 'insufficient_stock');
+      return json_build_object('success', false, 'error', 'insufficient_stock');
+    end;
     insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
       values (p_nfc_tag_id, p_device_id, 'distribution_recorded');
   else
     insert into meal_attendance (beneficiary_id, nfc_tag_id, device_id, status)
-      values (v_beneficiary.beneficiary_id, p_nfc_tag_id, p_device_id, 'present');
+      values (v_beneficiary.beneficiary_id, p_nfc_tag_id, p_device_id, 'present')
+      on conflict (beneficiary_id, attendance_date, meal_type) do nothing;
     insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
       values (p_nfc_tag_id, p_device_id, 'attendance_recorded');
   end if;
