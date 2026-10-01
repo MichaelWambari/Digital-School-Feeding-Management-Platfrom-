@@ -6,9 +6,12 @@ use case diagram.
 ## 1. Create your Supabase project
 1. Go to https://supabase.com → New project (free tier is fine).
 2. Once created, open **SQL Editor** → paste the contents of
-   `supabase/schema.sql` → Run. This creates all 5 tables (profiles,
-   beneficiaries, attendance, inventory, distribution) with row-level
-   security enabled.
+  `supabase/schema.sql` → Run. This creates the application tables
+  (`users`, `beneficiaries`, `nfc_devices`, `inventory_items`,
+  `inventory_transactions`, `meal_attendance`, `food_distribution`,
+  `reports`, and `nfc_tag_logs`) with row-level security enabled.
+  **Warning:** this development bootstrap drops and recreates these tables.
+  Running it again deletes their data; do not use it to update a live database.
 3. Go to **Project Settings → API** and copy:
    - Project URL
    - `anon` public key
@@ -42,7 +45,7 @@ Since sign-up isn't wired up in the UI yet, create your first test user
 directly in Supabase:
 - Dashboard → Authentication → Users → **Add user** → enter an email/password.
 - The `handle_new_user` trigger will automatically create a matching row in
-  `profiles` with role `coordinator`. Change the role manually in the table
+  `users` with role `coordinator`. Change the role manually in the table
   editor if you want to test as `admin` or `inventory_officer`.
 - Log in with those credentials in the app.
 

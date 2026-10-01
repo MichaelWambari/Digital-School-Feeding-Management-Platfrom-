@@ -3,11 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { supabase } from '../lib/supabase';
 
 const MENU_ITEMS = [
-  { label: 'Beneficiaries', screen: 'Beneficiaries' },
-  { label: 'Attendance', screen: 'Attendance' },
-  { label: 'Inventory', screen: 'Inventory' },
-  { label: 'Distribution', screen: 'Distribution' },
-  { label: 'Reports', screen: 'Reports' },
+  { label: 'Beneficiaries', screen: 'Beneficiaries', available: false },
+  { label: 'Attendance', screen: 'Attendance', available: false },
+  { label: 'Inventory', screen: 'Inventory', available: false },
+  { label: 'Distribution', screen: 'Distribution', available: false },
+  { label: 'Reports', screen: 'Reports', available: false },
 ];
 
 export default function DashboardScreen({ navigation }: any) {
@@ -46,11 +46,13 @@ export default function DashboardScreen({ navigation }: any) {
         {MENU_ITEMS.map((item) => (
           <TouchableOpacity
             key={item.screen}
-            style={styles.menuItem}
-            onPress={() => navigation.navigate(item.screen)}
+            style={[styles.menuItem, !item.available && styles.menuItemDisabled]}
+            onPress={() => item.available && navigation.navigate(item.screen)}
+            disabled={!item.available}
+            accessibilityState={{ disabled: !item.available }}
           >
             <Text style={styles.menuText}>{item.label}</Text>
-            <Text style={styles.chevron}>›</Text>
+            <Text style={styles.chevron}>{item.available ? '›' : 'Coming soon'}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -85,6 +87,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  menuItemDisabled: { opacity: 0.55 },
   menuText: { fontSize: 16 },
   chevron: { fontSize: 20, color: '#999' },
 });
