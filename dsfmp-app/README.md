@@ -17,28 +17,38 @@ use case diagram.
    - `anon` public key
 4. Paste them into `src/lib/supabase.ts`.
 
-## 2. Create the Expo app
-If you haven't already created the Expo project shell:
-```bash
-npx create-expo-app dsfmp-app
-cd dsfmp-app
-```
-Then copy `App.tsx`, the `src/` folder, and `supabase/` folder from this
-scaffold into your project, overwriting the default `App.tsx`.
+## 2. Install prerequisites
+- **Node.js LTS** (v20 or newer): https://nodejs.org (tick "Add to PATH")
+- **Expo Go** app on your phone: App Store (iOS) / Google Play (Android)
+- Optional: **Android Studio** (for the Android emulator), or a **Mac with
+  Xcode** (for the iOS simulator). Neither is needed if you use Expo Go on a
+  real phone.
+
+This folder is already a complete Expo SDK 57 project (`package.json`,
+`app.json`, `index.ts`, `tsconfig.json`, `assets/`), so you do **not**
+need to run `create-expo-app`.
 
 ## 3. Install dependencies
 ```bash
-npx expo install @supabase/supabase-js @react-native-async-storage/async-storage react-native-url-polyfill
-npx expo install @react-navigation/native @react-navigation/native-stack
-npx expo install react-native-screens react-native-safe-area-context
+npm install
 ```
+(If you ever add a native library, use `npx expo install <package>` so the
+version matches the Expo SDK.)
 
 ## 4. Run it
 ```bash
 npx expo start
 ```
-Scan the QR code with the **Expo Go** app on your phone (Android/iOS), or
-press `a` for the Android emulator / `i` for the iOS simulator.
+- **Android phone:** open Expo Go → *Scan QR code*.
+- **iPhone:** scan the QR code with the Camera app → opens in Expo Go.
+- Phone and computer must be on the same Wi-Fi. If that does not work (e.g.
+  school/office network), run `npx expo start --tunnel`.
+- Press `a` for the Android emulator, or `i` for the iOS simulator (Mac only).
+
+Building installable apps (APK/AAB/IPA) later: use EAS Build
+(`npm i -g eas-cli`, `eas build -p android` / `eas build -p ios`). iOS
+builds for real devices need an Apple Developer account. The app identifiers
+are set to `com.dsfmp.app` in `app.json`; change them before publishing.
 
 ## 5. Test the login flow
 Since sign-up isn't wired up in the UI yet, create your first test user
