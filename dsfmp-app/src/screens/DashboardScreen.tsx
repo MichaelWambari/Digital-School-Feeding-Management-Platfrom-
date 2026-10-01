@@ -1,0 +1,90 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { supabase } from '../lib/supabase';
+
+const MENU_ITEMS = [
+  { label: 'Beneficiaries', screen: 'Beneficiaries' },
+  { label: 'Attendance', screen: 'Attendance' },
+  { label: 'Inventory', screen: 'Inventory' },
+  { label: 'Distribution', screen: 'Distribution' },
+  { label: 'Reports', screen: 'Reports' },
+];
+
+export default function DashboardScreen({ navigation }: any) {
+  const [beneficiaryCount, setBeneficiaryCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  async function loadStats() {
+    const { count } = await supabase
+      .from('beneficiaries')
+      .select('*', { count: 'exact', head: true });
+    setBeneficiaryCount(count ?? 0);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Dashboard</Text>
+        <TouchableOpacity onPress={handleLogout}>
+          <Text style={styles.logout}>Logout</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.statCard}>
+        <Text style={styles.statNumber}>{beneficiaryCount ?? '—'}</Text>
+        <Text style={styles.statLabel}>Total beneficiaries</Text>
+      </View>
+
+      <View style={styles.menu}>
+        {MENU_ITEMS.map((item) => (
+          <TouchableOpacity
+            key={item.screen}
+            style={styles.menuItem}
+            onPress={() => navigation.navigate(item.screen)}
+          >
+            <Text style={styles.menuText}>{item.label}</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  headerTitle: { fontSize: 22, fontWeight: '700' },
+  logout: { color: '#dc2626', fontSize: 14 },
+  statCard: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+  },
+  statNumber: { fontSize: 32, fontWeight: '700' },
+  statLabel: { fontSize: 13, color: '#666', marginTop: 4 },
+  menu: { borderTopWidth: 1, borderTopColor: '#eee' },
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  menuText: { fontSize: 16 },
+  chevron: { fontSize: 20, color: '#999' },
+});
