@@ -349,6 +349,10 @@ create trigger on_auth_user_created
 -- selects which). Every call is logged to nfc_tag_logs
 -- regardless of outcome, so a misbehaving reader or an
 -- unregistered card leaves a trace to investigate.
+-- Attendance scans are filed under the meal whose serving window
+-- (Nairobi time) they fall in: breakfast 06:00-07:00, lunch
+-- 12:00-14:00, supper 18:00-20:00. Scans outside every window
+-- are rejected with 'outside_meal_time'.
 -- ------------------------------------------------------------
 create or replace function record_nfc_scan(
   p_nfc_tag_id text,
@@ -365,6 +369,9 @@ as $$
 declare
   v_beneficiary beneficiaries%rowtype;
   v_device_status text;
+  -- Serving windows are in school (Nairobi) time, not the server's UTC clock.
+  v_local_now timestamp := now() at time zone 'Africa/Nairobi';
+  v_meal_type text;
 begin
   if p_nfc_tag_id is null or btrim(p_nfc_tag_id) = '' then
     insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
@@ -417,8 +424,22 @@ begin
     insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
       values (p_nfc_tag_id, p_device_id, 'distribution_recorded');
   else
-    insert into meal_attendance (beneficiary_id, nfc_tag_id, device_id, status)
-      values (v_beneficiary.beneficiary_id, p_nfc_tag_id, p_device_id, 'present')
+    -- The meal is decided by the serving window the scan falls in (end time exclusive).
+    v_meal_type := case
+      when v_local_now::time >= '06:00' and v_local_now::time < '07:00' then 'breakfast'
+      when v_local_now::time >= '12:00' and v_local_now::time < '14:00' then 'lunch'
+      when v_local_now::time >= '18:00' and v_local_now::time < '20:00' then 'supper'
+    end;
+    if v_meal_type is null then
+      insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
+        values (p_nfc_tag_id, p_device_id, 'outside_meal_time');
+      return json_build_object('success', false, 'error', 'outside_meal_time');
+    end if;
+
+    insert into meal_attendance
+        (beneficiary_id, nfc_tag_id, device_id, meal_type, attendance_date, status)
+      values (v_beneficiary.beneficiary_id, p_nfc_tag_id, p_device_id,
+              v_meal_type, v_local_now::date, 'present')
       on conflict (beneficiary_id, attendance_date, meal_type) do nothing;
     insert into nfc_tag_logs (nfc_tag_id, device_id, action_type)
       values (p_nfc_tag_id, p_device_id, 'attendance_recorded');

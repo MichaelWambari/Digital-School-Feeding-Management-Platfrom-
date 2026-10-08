@@ -72,6 +72,9 @@ directly in Supabase:
 - ✅ Attendance screen — pick breakfast/lunch/supper, search active beneficiaries,
   and mark each one present for today (tap again to undo). Shows a
   present/total count and picks up rows already recorded by NFC scans.
+  NFC card scans are filed by serving window (Nairobi time): breakfast
+  06:00–07:00, lunch 12:00–14:00, supper 18:00–20:00. Scans outside these
+  windows are rejected. To change the windows, edit `record_nfc_scan()`.
 - ✅ Inventory screen — stock list with low-stock warnings, add/edit items,
   and record deliveries ("received") or usage ("used") per item with recent
   history. Stock levels are updated by a database trigger, which also blocks
