@@ -66,9 +66,11 @@ directly in Supabase:
 - ✅ Auth-based routing (logged out → Login, logged in → Dashboard)
 - ✅ Beneficiaries screen — searchable list + add/edit form (UC-02). Only
   `admin` and `coordinator` users can save; others see a permission error.
+- ✅ Attendance screen — pick breakfast/lunch, search active beneficiaries,
+  and mark each one present for today (tap again to undo). Shows a
+  present/total count and picks up rows already recorded by NFC scans.
 
 ## Next modules to build (uncomment in `AppNavigator.tsx` as you go)
-- `AttendanceScreen` — search beneficiary → record attendance
 - `InventoryScreen` — stock list + add/update stock
 - `DistributionScreen` — record distribution, auto-decrement inventory
 - `ReportsScreen` — attendance/distribution summaries, maybe with a chart

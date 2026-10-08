@@ -8,7 +8,7 @@ import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 // Add these screens as you build them:
 import BeneficiariesScreen from '../screens/BeneficiariesScreen';
-// import AttendanceScreen from '../screens/AttendanceScreen';
+import AttendanceScreen from '../screens/AttendanceScreen';
 // import InventoryScreen from '../screens/InventoryScreen';
 // import DistributionScreen from '../screens/DistributionScreen';
 // import ReportsScreen from '../screens/ReportsScreen';
@@ -41,7 +41,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Dashboard" component={DashboardScreen} />
             <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} />
-            {/* <Stack.Screen name="Attendance" component={AttendanceScreen} /> */}
+            <Stack.Screen name="Attendance" component={AttendanceScreen} />
             {/* <Stack.Screen name="Inventory" component={InventoryScreen} /> */}
             {/* <Stack.Screen name="Distribution" component={DistributionScreen} /> */}
             {/* <Stack.Screen name="Reports" component={ReportsScreen} /> */}
