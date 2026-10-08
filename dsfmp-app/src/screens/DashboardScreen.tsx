@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { supabase } from '../lib/supabase';
 
 const MENU_ITEMS = [
-  { label: 'Beneficiaries', screen: 'Beneficiaries', available: false },
+  { label: 'Beneficiaries', screen: 'Beneficiaries', available: true },
   { label: 'Attendance', screen: 'Attendance', available: false },
   { label: 'Inventory', screen: 'Inventory', available: false },
   { label: 'Distribution', screen: 'Distribution', available: false },
@@ -14,8 +14,9 @@ export default function DashboardScreen({ navigation }: any) {
   const [beneficiaryCount, setBeneficiaryCount] = useState<number | null>(null);
 
   useEffect(() => {
-    loadStats();
-  }, []);
+    // Reload on every focus so the count reflects changes made on other screens.
+    return navigation.addListener('focus', loadStats);
+  }, [navigation]);
 
   async function loadStats() {
     const { count } = await supabase

@@ -64,9 +64,10 @@ directly in Supabase:
 - ✅ Login screen (matches Figure 4.7 wireframe)
 - ✅ Dashboard with live beneficiary count + navigation menu
 - ✅ Auth-based routing (logged out → Login, logged in → Dashboard)
+- ✅ Beneficiaries screen — searchable list + add/edit form (UC-02). Only
+  `admin` and `coordinator` users can save; others see a permission error.
 
 ## Next modules to build (uncomment in `AppNavigator.tsx` as you go)
-- `BeneficiariesScreen` — list + add/edit form (UC-02 in your use case spec)
 - `AttendanceScreen` — search beneficiary → record attendance
 - `InventoryScreen` — stock list + add/update stock
 - `DistributionScreen` — record distribution, auto-decrement inventory
