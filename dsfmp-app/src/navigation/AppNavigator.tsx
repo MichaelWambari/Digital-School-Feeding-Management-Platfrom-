@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 // Add these screens as you build them:
-// import BeneficiariesScreen from '../screens/BeneficiariesScreen';
+import BeneficiariesScreen from '../screens/BeneficiariesScreen';
 // import AttendanceScreen from '../screens/AttendanceScreen';
 // import InventoryScreen from '../screens/InventoryScreen';
 // import DistributionScreen from '../screens/DistributionScreen';
@@ -40,7 +40,7 @@ export default function AppNavigator() {
         {session ? (
           <>
             <Stack.Screen name="Dashboard" component={DashboardScreen} />
-            {/* <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} /> */}
+            <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} />
             {/* <Stack.Screen name="Attendance" component={AttendanceScreen} /> */}
             {/* <Stack.Screen name="Inventory" component={InventoryScreen} /> */}
             {/* <Stack.Screen name="Distribution" component={DistributionScreen} /> */}
