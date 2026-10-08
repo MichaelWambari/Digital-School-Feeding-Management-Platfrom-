@@ -69,9 +69,13 @@ directly in Supabase:
 - ✅ Attendance screen — pick breakfast/lunch, search active beneficiaries,
   and mark each one present for today (tap again to undo). Shows a
   present/total count and picks up rows already recorded by NFC scans.
+- ✅ Inventory screen — stock list with low-stock warnings, add/edit items,
+  and record deliveries ("received") or usage ("used") per item with recent
+  history. Stock levels are updated by a database trigger, which also blocks
+  using more than is in stock. Only `admin` and `inventory_officer` users
+  can make changes.
 
 ## Next modules to build (uncomment in `AppNavigator.tsx` as you go)
-- `InventoryScreen` — stock list + add/update stock
 - `DistributionScreen` — record distribution, auto-decrement inventory
 - `ReportsScreen` — attendance/distribution summaries, maybe with a chart
   library like `react-native-chart-kit`

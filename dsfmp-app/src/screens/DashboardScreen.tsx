@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 const MENU_ITEMS = [
   { label: 'Beneficiaries', screen: 'Beneficiaries', available: true },
   { label: 'Attendance', screen: 'Attendance', available: true },
-  { label: 'Inventory', screen: 'Inventory', available: false },
+  { label: 'Inventory', screen: 'Inventory', available: true },
   { label: 'Distribution', screen: 'Distribution', available: false },
   { label: 'Reports', screen: 'Reports', available: false },
 ];
