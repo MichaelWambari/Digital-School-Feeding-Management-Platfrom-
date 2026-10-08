@@ -12,6 +12,9 @@ use case diagram.
   `reports`, and `nfc_tag_logs`) with row-level security enabled.
   **Warning:** this development bootstrap drops and recreates these tables.
   Running it again deletes their data; do not use it to update a live database.
+  To update an existing database instead, run the files in `supabase/fixes/`
+  in number order. Each one is safe to run on live data, and `schema.sql`
+  already includes them, so a fresh setup doesn't need them.
 3. Go to **Project Settings → API** and copy:
    - Project URL
    - `anon` public key
@@ -74,9 +77,12 @@ directly in Supabase:
   history. Stock levels are updated by a database trigger, which also blocks
   using more than is in stock. Only `admin` and `inventory_officer` users
   can make changes.
+- ✅ Distribution screen — pick a food item and portion size, then issue it
+  to beneficiaries (tap Issue, then Confirm). Each distribution
+  automatically deducts stock and is blocked if stock is short. Shows who
+  received the item today. Only `admin` and `coordinator` users can issue.
 
 ## Next modules to build (uncomment in `AppNavigator.tsx` as you go)
-- `DistributionScreen` — record distribution, auto-decrement inventory
 - `ReportsScreen` — attendance/distribution summaries, maybe with a chart
   library like `react-native-chart-kit`
 
