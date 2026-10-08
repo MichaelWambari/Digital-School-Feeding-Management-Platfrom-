@@ -17,8 +17,13 @@ type Beneficiary = {
   admission_no: string;
 };
 
-const MEAL_TYPES = ['breakfast', 'lunch'] as const;
+const MEAL_TYPES = ['breakfast', 'lunch', 'supper'] as const;
 type MealType = (typeof MEAL_TYPES)[number];
+const MEAL_LABELS: Record<MealType, string> = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  supper: 'Supper',
+};
 
 // Local calendar date as YYYY-MM-DD, so "today" matches the coordinator's day
 // rather than the database server's UTC date.
@@ -167,7 +172,7 @@ export default function AttendanceScreen({ navigation }: any) {
             accessibilityState={{ selected: mealType === meal }}
           >
             <Text style={[styles.segmentText, mealType === meal && styles.segmentTextActive]}>
-              {meal === 'breakfast' ? 'Breakfast' : 'Lunch'}
+              {MEAL_LABELS[meal]}
             </Text>
           </TouchableOpacity>
         ))}
