@@ -7,7 +7,7 @@ const MENU_ITEMS = [
   { label: 'Attendance', screen: 'Attendance', available: true },
   { label: 'Inventory', screen: 'Inventory', available: true },
   { label: 'Distribution', screen: 'Distribution', available: true },
-  { label: 'Reports', screen: 'Reports', available: false },
+  { label: 'Reports', screen: 'Reports', available: true },
 ];
 
 export default function DashboardScreen({ navigation }: any) {
