@@ -10,7 +10,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import BeneficiariesScreen from '../screens/BeneficiariesScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import InventoryScreen from '../screens/InventoryScreen';
-// import DistributionScreen from '../screens/DistributionScreen';
+import DistributionScreen from '../screens/DistributionScreen';
 // import ReportsScreen from '../screens/ReportsScreen';
 
 const Stack = createNativeStackNavigator();
@@ -43,7 +43,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} />
             <Stack.Screen name="Attendance" component={AttendanceScreen} />
             <Stack.Screen name="Inventory" component={InventoryScreen} />
-            {/* <Stack.Screen name="Distribution" component={DistributionScreen} /> */}
+            <Stack.Screen name="Distribution" component={DistributionScreen} />
             {/* <Stack.Screen name="Reports" component={ReportsScreen} /> */}
           </>
         ) : (

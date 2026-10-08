@@ -186,7 +186,7 @@ begin
   values (new.item_id, 'used', coalesce(new.quantity_issued, 0), new.recorded_by);
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public, pg_temp;
 
 create trigger on_food_distribution_insert
   after insert on food_distribution

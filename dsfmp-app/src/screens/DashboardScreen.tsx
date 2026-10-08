@@ -6,7 +6,7 @@ const MENU_ITEMS = [
   { label: 'Beneficiaries', screen: 'Beneficiaries', available: true },
   { label: 'Attendance', screen: 'Attendance', available: true },
   { label: 'Inventory', screen: 'Inventory', available: true },
-  { label: 'Distribution', screen: 'Distribution', available: false },
+  { label: 'Distribution', screen: 'Distribution', available: true },
   { label: 'Reports', screen: 'Reports', available: false },
 ];
 
