@@ -84,11 +84,17 @@ directly in Supabase:
   to beneficiaries (tap Issue, then Confirm). Each distribution
   automatically deducts stock and is blocked if stock is short. Shows who
   received the item today. Only `admin` and `coordinator` users can issue.
+- ✅ Reports screen — for today, the last 7 days or the last 30 days:
+  meals served per meal (with average attendance %), a daily attendance
+  bar chart split by meal, food distributed per item, and current stock
+  with low-stock items flagged.
 
-## Next modules to build (uncomment in `AppNavigator.tsx` as you go)
-- `ReportsScreen` — attendance/distribution summaries, maybe with a chart
-  library like `react-native-chart-kit`
+## Possible next steps
+- Export reports (PDF/CSV) to Supabase Storage and record them in the
+  `reports` table, which the schema already provides.
+- Sign-up / user management in the app (users are currently created in the
+  Supabase dashboard).
 
-Each of these follows the same pattern as `DashboardScreen.tsx`: query
-Supabase with `supabase.from('table_name').select()`, render the result,
-and use `.insert()` / `.update()` for the forms.
+All screens follow the same pattern: query Supabase with
+`supabase.from('table_name').select()`, render the result, and use
+`.insert()` / `.update()` for the forms.
