@@ -69,7 +69,7 @@ directly in Supabase:
 - ✅ Auth-based routing (logged out → Login, logged in → Dashboard)
 - ✅ Beneficiaries screen — searchable list + add/edit form (UC-02). Only
   `admin` and `coordinator` users can save; others see a permission error.
-- ✅ Attendance screen — pick breakfast/lunch, search active beneficiaries,
+- ✅ Attendance screen — pick breakfast/lunch/supper, search active beneficiaries,
   and mark each one present for today (tap again to undo). Shows a
   present/total count and picks up rows already recorded by NFC scans.
 - ✅ Inventory screen — stock list with low-stock warnings, add/edit items,
