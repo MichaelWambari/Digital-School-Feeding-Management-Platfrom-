@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, useThemedStyles } from '../theme/ThemeContext';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -34,6 +35,7 @@ function todayLocal() {
 }
 
 export default function AttendanceScreen({ navigation }: any) {
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   // beneficiary_id -> attendance_id for today's selected meal
@@ -187,6 +189,7 @@ export default function AttendanceScreen({ navigation }: any) {
 
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         value={search}
         onChangeText={setSearch}
         placeholder="Search by name or admission no."
@@ -228,7 +231,7 @@ export default function AttendanceScreen({ navigation }: any) {
                 }
               >
                 {isBusy ? (
-                  <ActivityIndicator color={isPresent ? '#166534' : '#fff'} />
+                  <ActivityIndicator color={isPresent ? colors.successText : colors.onPrimary} />
                 ) : (
                   <Text style={[styles.markText, isPresent && styles.markTextDone]}>
                     {isPresent ? '✓ Present' : 'Mark present'}
@@ -243,60 +246,61 @@ export default function AttendanceScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background, padding: 20 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
   headerSpacer: { width: 60 },
-  back: { color: '#2563eb', fontSize: 15 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: '#ccc', borderRadius: 8 },
+  back: { color: c.primary, fontSize: 15 },
+  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
   segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: '#2563eb', borderRadius: 7 },
-  segmentText: { fontSize: 14, color: '#444' },
-  segmentTextActive: { color: '#fff', fontWeight: '600' },
+  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
+  segmentText: { fontSize: 14, color: c.textSecondary },
+  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
   summary: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: c.surface,
     borderRadius: 12,
     padding: 16,
     marginVertical: 16,
   },
-  summaryNumber: { fontSize: 26, fontWeight: '700' },
-  summaryLabel: { fontSize: 13, color: '#666', marginTop: 2 },
+  summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
+  summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: c.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
+    color: c.text,
   },
-  error: { color: '#dc2626', fontSize: 13, marginTop: 12 },
+  error: { color: c.danger, fontSize: 13, marginTop: 12 },
   list: { marginTop: 12 },
-  empty: { textAlign: 'center', color: '#666', marginTop: 32 },
+  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: c.divider,
   },
   rowMain: { flex: 1 },
-  rowName: { fontSize: 16 },
-  rowMeta: { fontSize: 13, color: '#666', marginTop: 2 },
+  rowName: { fontSize: 16, color: c.text },
+  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   markButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: c.primary,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minWidth: 110,
     alignItems: 'center',
   },
-  markButtonDone: { backgroundColor: '#dcfce7' },
-  markText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  markTextDone: { color: '#166534' },
+  markButtonDone: { backgroundColor: c.successBg },
+  markText: { color: c.onPrimary, fontSize: 14, fontWeight: '600' },
+  markTextDone: { color: c.successText },
 });

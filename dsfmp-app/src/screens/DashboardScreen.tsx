@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, ThemePreference, useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 const MENU_ITEMS = [
   { label: 'Beneficiaries', screen: 'Beneficiaries', available: true },
@@ -10,7 +11,15 @@ const MENU_ITEMS = [
   { label: 'Reports', screen: 'Reports', available: true },
 ];
 
+const THEME_OPTIONS: { key: ThemePreference; label: string }[] = [
+  { key: 'system', label: 'System' },
+  { key: 'light', label: 'Light' },
+  { key: 'dark', label: 'Dark' },
+];
+
 export default function DashboardScreen({ navigation }: any) {
+  const { styles } = useThemedStyles(makeStyles);
+  const { preference, setPreference } = useTheme();
   const [beneficiaryCount, setBeneficiaryCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -57,38 +66,62 @@ export default function DashboardScreen({ navigation }: any) {
           </TouchableOpacity>
         ))}
       </View>
+
+      <Text style={styles.sectionTitle}>Theme</Text>
+      <View style={styles.segment}>
+        {THEME_OPTIONS.map((option) => (
+          <TouchableOpacity
+            key={option.key}
+            style={[styles.segmentItem, preference === option.key && styles.segmentItemActive]}
+            onPress={() => setPreference(option.key)}
+            accessibilityState={{ selected: preference === option.key }}
+          >
+            <Text
+              style={[styles.segmentText, preference === option.key && styles.segmentTextActive]}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background, padding: 20 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 22, fontWeight: '700' },
-  logout: { color: '#dc2626', fontSize: 14 },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: c.text },
+  logout: { color: c.danger, fontSize: 14 },
   statCard: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: c.surface,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
   },
-  statNumber: { fontSize: 32, fontWeight: '700' },
-  statLabel: { fontSize: 13, color: '#666', marginTop: 4 },
-  menu: { borderTopWidth: 1, borderTopColor: '#eee' },
+  statNumber: { fontSize: 32, fontWeight: '700', color: c.text },
+  statLabel: { fontSize: 13, color: c.textMuted, marginTop: 4 },
+  menu: { borderTopWidth: 1, borderTopColor: c.divider },
   menuItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: c.divider,
   },
   menuItemDisabled: { opacity: 0.55 },
-  menuText: { fontSize: 16 },
-  chevron: { fontSize: 20, color: '#999' },
+  menuText: { fontSize: 16, color: c.text },
+  chevron: { fontSize: 20, color: c.textFaint },
+  sectionTitle: { fontSize: 15, fontWeight: '600', color: c.text, marginTop: 28, marginBottom: 10 },
+  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
+  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
+  segmentText: { fontSize: 14, color: c.textSecondary },
+  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
 });

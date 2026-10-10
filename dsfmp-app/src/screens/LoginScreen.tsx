@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, useThemedStyles } from '../theme/ThemeContext';
 
 export default function LoginScreen() {
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,6 +45,7 @@ export default function LoginScreen() {
       <Text style={styles.label}>Email</Text>
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         placeholder="you@school.ac.ke"
         autoCapitalize="none"
         keyboardType="email-address"
@@ -53,6 +56,7 @@ export default function LoginScreen() {
       <Text style={styles.label}>Password</Text>
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         placeholder="••••••••"
         secureTextEntry
         value={password}
@@ -61,7 +65,7 @@ export default function LoginScreen() {
 
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.onPrimary} />
         ) : (
           <Text style={styles.buttonText}>Login</Text>
         )}
@@ -70,25 +74,26 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  subtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 32 },
-  label: { fontSize: 13, color: '#444', marginBottom: 6, marginTop: 12 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: c.background },
+  title: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 4, color: c.text },
+  subtitle: { fontSize: 13, color: c.textMuted, textAlign: 'center', marginBottom: 32 },
+  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: c.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
+    color: c.text,
   },
   button: {
-    backgroundColor: '#2563eb',
+    backgroundColor: c.primary,
     borderRadius: 8,
     paddingVertical: 14,
     marginTop: 28,
     alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
 });

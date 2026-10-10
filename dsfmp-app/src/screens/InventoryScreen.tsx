@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, useThemedStyles } from '../theme/ThemeContext';
 
 type Item = {
   item_id: string;
@@ -43,6 +44,7 @@ function formatQty(qty: number, unit: string | null) {
 }
 
 export default function InventoryScreen({ navigation }: any) {
+  const { styles } = useThemedStyles(makeStyles);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -150,6 +152,7 @@ function ItemFormView({
   target: Item | 'new';
   onDone: (saved: boolean) => void;
 }) {
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [form, setForm] = useState<ItemForm>(
     target === 'new'
       ? EMPTY_ITEM_FORM
@@ -219,6 +222,7 @@ function ItemFormView({
       <Text style={styles.label}>Item name *</Text>
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         value={form.item_name}
         onChangeText={(item_name) => setForm({ ...form, item_name })}
         placeholder="e.g. Maize flour"
@@ -227,6 +231,7 @@ function ItemFormView({
       <Text style={styles.label}>Unit</Text>
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         value={form.unit}
         onChangeText={(unit) => setForm({ ...form, unit })}
         autoCapitalize="none"
@@ -236,6 +241,7 @@ function ItemFormView({
       <Text style={styles.label}>Reorder level</Text>
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         value={form.reorder_level}
         onChangeText={(reorder_level) => setForm({ ...form, reorder_level })}
         keyboardType="decimal-pad"
@@ -251,7 +257,11 @@ function ItemFormView({
       {error && <Text style={styles.error}>{error}</Text>}
 
       <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save</Text>}
+        {saving ? (
+          <ActivityIndicator color={colors.onPrimary} />
+        ) : (
+          <Text style={styles.buttonText}>Save</Text>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -268,6 +278,7 @@ function StockDetailView({
   onEdit: () => void;
   onStockChanged: () => Promise<void>;
 }) {
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [type, setType] = useState<'received' | 'used'>('received');
   const [quantity, setQuantity] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -369,6 +380,7 @@ function StockDetailView({
       <Text style={styles.label}>Quantity{item.unit ? ` (${item.unit})` : ''}</Text>
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         value={quantity}
         onChangeText={setQuantity}
         keyboardType="decimal-pad"
@@ -379,7 +391,7 @@ function StockDetailView({
 
       <TouchableOpacity style={styles.button} onPress={handleRecord} disabled={saving}>
         {saving ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.onPrimary} />
         ) : (
           <Text style={styles.buttonText}>
             {type === 'received' ? 'Add to stock' : 'Remove from stock'}
@@ -395,7 +407,7 @@ function StockDetailView({
       ) : (
         history.map((t) => (
           <View key={t.transaction_id} style={styles.row}>
-            <Text style={styles.rowMain}>{t.transaction_date}</Text>
+            <Text style={styles.historyDate}>{t.transaction_date}</Text>
             <Text style={t.transaction_type === 'received' ? styles.qtyIn : styles.qtyOut}>
               {t.transaction_type === 'received' ? '+' : '−'}
               {formatQty(t.quantity, item.unit)}
@@ -408,74 +420,76 @@ function StockDetailView({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background, padding: 20 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
   headerSpacer: { width: 60 },
-  link: { color: '#2563eb', fontSize: 15 },
+  link: { color: c.primary, fontSize: 15 },
   linkStrong: { fontWeight: '600' },
-  detailTitle: { fontSize: 22, fontWeight: '700', marginBottom: 12 },
-  sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 24, marginBottom: 10 },
-  summary: { backgroundColor: '#f3f4f6', borderRadius: 12, padding: 16, marginBottom: 16 },
-  summaryLow: { backgroundColor: '#fef3c7' },
-  summaryNumber: { fontSize: 26, fontWeight: '700' },
-  summaryLabel: { fontSize: 13, color: '#666', marginTop: 2 },
-  label: { fontSize: 13, color: '#444', marginBottom: 6, marginTop: 12 },
+  detailTitle: { fontSize: 22, fontWeight: '700', marginBottom: 12, color: c.text },
+  sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 24, marginBottom: 10, color: c.text },
+  summary: { backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 16 },
+  summaryLow: { backgroundColor: c.warningBg },
+  summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
+  summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
+  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: c.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
+    color: c.text,
   },
-  hint: { fontSize: 13, color: '#666', marginTop: 12 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: '#ccc', borderRadius: 8 },
+  hint: { fontSize: 13, color: c.textMuted, marginTop: 12 },
+  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
   segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: '#2563eb', borderRadius: 7 },
-  segmentText: { fontSize: 14, color: '#444' },
-  segmentTextActive: { color: '#fff', fontWeight: '600' },
-  error: { color: '#dc2626', fontSize: 13, marginTop: 12 },
+  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
+  segmentText: { fontSize: 14, color: c.textSecondary },
+  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
+  error: { color: c.danger, fontSize: 13, marginTop: 12 },
   button: {
-    backgroundColor: '#2563eb',
+    backgroundColor: c.primary,
     borderRadius: 8,
     paddingVertical: 14,
     marginTop: 20,
     alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  empty: { textAlign: 'center', color: '#666', marginTop: 32 },
-  emptyLeft: { color: '#666' },
+  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
+  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
+  emptyLeft: { color: c.textMuted },
   historyLoading: { marginTop: 8 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: c.divider,
   },
   rowMain: { flex: 1 },
-  rowName: { fontSize: 16 },
-  rowMeta: { fontSize: 13, color: '#666', marginTop: 2 },
+  historyDate: { flex: 1, color: c.text },
+  rowName: { fontSize: 16, color: c.text },
+  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   rowRight: { alignItems: 'flex-end' },
-  rowQty: { fontSize: 16, fontWeight: '600' },
+  rowQty: { fontSize: 16, fontWeight: '600', color: c.text },
   lowBadge: {
     fontSize: 12,
-    color: '#92400e',
-    backgroundColor: '#fef3c7',
+    color: c.warningText,
+    backgroundColor: c.warningBg,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
     overflow: 'hidden',
     marginTop: 4,
   },
-  qtyIn: { color: '#166534', fontWeight: '600' },
-  qtyOut: { color: '#b91c1c', fontWeight: '600' },
+  qtyIn: { color: c.successText, fontWeight: '600' },
+  qtyOut: { color: c.danger, fontWeight: '600' },
   bottomSpacer: { height: 40 },
 });

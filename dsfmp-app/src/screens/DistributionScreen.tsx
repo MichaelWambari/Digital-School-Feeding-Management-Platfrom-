@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, useThemedStyles } from '../theme/ThemeContext';
 
 type Item = {
   item_id: string;
@@ -38,6 +39,7 @@ function formatQty(qty: number, unit: string | null) {
 }
 
 export default function DistributionScreen({ navigation }: any) {
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [items, setItems] = useState<Item[]>([]);
   const [itemId, setItemId] = useState<string | null>(null);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
@@ -241,6 +243,7 @@ export default function DistributionScreen({ navigation }: any) {
           <Text style={styles.label}>Portion per beneficiary{item?.unit ? ` (${item.unit})` : ''}</Text>
           <TextInput
             style={styles.input}
+            placeholderTextColor={colors.placeholder}
             value={portion}
             onChangeText={(text) => {
               setPortion(text);
@@ -252,6 +255,7 @@ export default function DistributionScreen({ navigation }: any) {
 
           <TextInput
             style={[styles.input, styles.search]}
+            placeholderTextColor={colors.placeholder}
             value={search}
             onChangeText={setSearch}
             placeholder="Search by name or admission no."
@@ -301,7 +305,7 @@ export default function DistributionScreen({ navigation }: any) {
                     }
                   >
                     {isBusy ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={colors.onPrimary} />
                     ) : (
                       <Text
                         style={[
@@ -327,66 +331,67 @@ export default function DistributionScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background, padding: 20 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
   headerSpacer: { width: 60 },
-  back: { color: '#2563eb', fontSize: 15 },
+  back: { color: c.primary, fontSize: 15 },
   chips: { flexGrow: 0 },
   chipsContent: { gap: 8 },
   chip: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: c.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  chipActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  chipText: { fontSize: 14, fontWeight: '600', color: '#222' },
-  chipMeta: { fontSize: 12, color: '#666', marginTop: 2 },
-  chipTextActive: { color: '#fff' },
-  summary: { backgroundColor: '#f3f4f6', borderRadius: 12, padding: 16, marginTop: 16 },
-  summaryNumber: { fontSize: 26, fontWeight: '700' },
-  summaryLabel: { fontSize: 13, color: '#666', marginTop: 2 },
-  label: { fontSize: 13, color: '#444', marginBottom: 6, marginTop: 16 },
+  chipActive: { backgroundColor: c.primary, borderColor: c.primary },
+  chipText: { fontSize: 14, fontWeight: '600', color: c.text },
+  chipMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
+  chipTextActive: { color: c.onPrimary },
+  summary: { backgroundColor: c.surface, borderRadius: 12, padding: 16, marginTop: 16 },
+  summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
+  summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
+  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 16 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: c.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
+    color: c.text,
   },
   search: { marginTop: 12 },
-  error: { color: '#dc2626', fontSize: 13, marginTop: 12 },
+  error: { color: c.danger, fontSize: 13, marginTop: 12 },
   list: { marginTop: 12 },
-  empty: { textAlign: 'center', color: '#666', marginTop: 32 },
+  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: c.divider,
   },
   rowMain: { flex: 1 },
-  rowName: { fontSize: 16 },
-  rowMeta: { fontSize: 13, color: '#666', marginTop: 2 },
+  rowName: { fontSize: 16, color: c.text },
+  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   issueButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: c.primary,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minWidth: 110,
     alignItems: 'center',
   },
-  issueButtonAgain: { backgroundColor: '#dcfce7' },
-  issueButtonConfirm: { backgroundColor: '#d97706' },
-  issueText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  issueTextAgain: { color: '#166534' },
+  issueButtonAgain: { backgroundColor: c.successBg },
+  issueButtonConfirm: { backgroundColor: c.warning },
+  issueText: { color: c.onPrimary, fontSize: 14, fontWeight: '600' },
+  issueTextAgain: { color: c.successText },
 });

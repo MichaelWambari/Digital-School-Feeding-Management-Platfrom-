@@ -1,20 +1,25 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.root}>
-        <StatusBar style="dark" />
-        <AppNavigator />
-      </SafeAreaView>
+      <ThemeProvider>
+        <ThemedRoot />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
-});
+function ThemedRoot() {
+  const { scheme, colors } = useTheme();
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <AppNavigator />
+    </SafeAreaView>
+  );
+}

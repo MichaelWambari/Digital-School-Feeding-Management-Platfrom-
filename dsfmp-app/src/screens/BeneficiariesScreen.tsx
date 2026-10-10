@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, useThemedStyles } from '../theme/ThemeContext';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -38,6 +39,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function BeneficiariesScreen({ navigation }: any) {
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -153,6 +155,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
         <Text style={styles.label}>Full name *</Text>
         <TextInput
           style={styles.input}
+          placeholderTextColor={colors.placeholder}
           value={form.full_name}
           onChangeText={(full_name) => setForm({ ...form, full_name })}
           placeholder="e.g. Jane Wanjiku"
@@ -161,6 +164,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
         <Text style={styles.label}>Admission number *</Text>
         <TextInput
           style={styles.input}
+          placeholderTextColor={colors.placeholder}
           value={form.admission_no}
           onChangeText={(admission_no) => setForm({ ...form, admission_no })}
           autoCapitalize="characters"
@@ -170,6 +174,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
         <Text style={styles.label}>Age</Text>
         <TextInput
           style={styles.input}
+          placeholderTextColor={colors.placeholder}
           value={form.age}
           onChangeText={(age) => setForm({ ...form, age })}
           keyboardType="number-pad"
@@ -179,6 +184,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
         <Text style={styles.label}>NFC tag ID</Text>
         <TextInput
           style={styles.input}
+          placeholderTextColor={colors.placeholder}
           value={form.nfc_tag_id}
           onChangeText={(nfc_tag_id) => setForm({ ...form, nfc_tag_id })}
           autoCapitalize="characters"
@@ -207,7 +213,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
 
         <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
           {saving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <Text style={styles.buttonText}>Save</Text>
           )}
@@ -239,6 +245,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
 
       <TextInput
         style={styles.input}
+        placeholderTextColor={colors.placeholder}
         value={search}
         onChangeText={setSearch}
         placeholder="Search by name or admission no."
@@ -291,62 +298,63 @@ function describeError(error: { code?: string; message: string }) {
   return error.message;
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background, padding: 20 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
   headerSpacer: { width: 60 },
-  back: { color: '#2563eb', fontSize: 15 },
-  add: { color: '#2563eb', fontSize: 15, fontWeight: '600' },
-  label: { fontSize: 13, color: '#444', marginBottom: 6, marginTop: 12 },
+  back: { color: c.primary, fontSize: 15 },
+  add: { color: c.primary, fontSize: 15, fontWeight: '600' },
+  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: c.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
+    color: c.text,
   },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: '#ccc', borderRadius: 8 },
+  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
   segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: '#2563eb', borderRadius: 7 },
-  segmentText: { fontSize: 14, color: '#444' },
-  segmentTextActive: { color: '#fff', fontWeight: '600' },
-  error: { color: '#dc2626', fontSize: 13, marginTop: 12 },
+  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
+  segmentText: { fontSize: 14, color: c.textSecondary },
+  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
+  error: { color: c.danger, fontSize: 13, marginTop: 12 },
   button: {
-    backgroundColor: '#2563eb',
+    backgroundColor: c.primary,
     borderRadius: 8,
     paddingVertical: 14,
     marginTop: 28,
     marginBottom: 40,
     alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
   list: { marginTop: 12 },
-  empty: { textAlign: 'center', color: '#666', marginTop: 32 },
+  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: c.divider,
   },
   rowMain: { flex: 1 },
-  rowName: { fontSize: 16 },
-  rowMeta: { fontSize: 13, color: '#666', marginTop: 2 },
+  rowName: { fontSize: 16, color: c.text },
+  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   badge: {
     fontSize: 12,
-    color: '#166534',
-    backgroundColor: '#dcfce7',
+    color: c.successText,
+    backgroundColor: c.successBg,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
     overflow: 'hidden',
   },
-  badgeInactive: { color: '#6b7280', backgroundColor: '#f3f4f6' },
+  badgeInactive: { color: c.textMuted, backgroundColor: c.surface },
 });

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../theme/ThemeContext';
 
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -15,6 +16,7 @@ import ReportsScreen from '../screens/ReportsScreen';
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
+  const { scheme, colors } = useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -33,8 +35,15 @@ export default function AppNavigator() {
 
   if (loading) return null; // swap for a splash screen if you like
 
+  // Match the navigator's backdrop to the theme so screen transitions don't flash white.
+  const baseTheme = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const navigationTheme = {
+    ...baseTheme,
+    colors: { ...baseTheme.colors, background: colors.background, primary: colors.primary },
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {session ? (
           <>

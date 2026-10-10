@@ -8,6 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Colors, useThemedStyles } from '../theme/ThemeContext';
 
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
@@ -79,6 +80,7 @@ async function fetchAllRows<T>(
 }
 
 export default function ReportsScreen({ navigation }: any) {
+  const { styles } = useThemedStyles(makeStyles);
   const [range, setRange] = useState<RangeKey>('week');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -323,33 +325,33 @@ export default function ReportsScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background, padding: 20 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
   headerSpacer: { width: 60 },
-  back: { color: '#2563eb', fontSize: 15 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: '#ccc', borderRadius: 8 },
+  back: { color: c.primary, fontSize: 15 },
+  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
   segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: '#2563eb', borderRadius: 7 },
-  segmentText: { fontSize: 14, color: '#444' },
-  segmentTextActive: { color: '#fff', fontWeight: '600' },
-  error: { color: '#dc2626', fontSize: 13, marginTop: 12 },
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginTop: 28, marginBottom: 10 },
+  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
+  segmentText: { fontSize: 14, color: c.textSecondary },
+  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
+  error: { color: c.danger, fontSize: 13, marginTop: 12 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', marginTop: 28, marginBottom: 10, color: c.text },
   tiles: { flexDirection: 'row', gap: 8 },
-  tile: { flex: 1, backgroundColor: '#f3f4f6', borderRadius: 12, padding: 12 },
-  tileNumber: { fontSize: 22, fontWeight: '700' },
-  tileLabel: { fontSize: 13, color: '#444', marginTop: 2 },
-  tileMeta: { fontSize: 12, color: '#666', marginTop: 2 },
-  note: { fontSize: 13, color: '#666', marginTop: 10 },
+  tile: { flex: 1, backgroundColor: c.surface, borderRadius: 12, padding: 12 },
+  tileNumber: { fontSize: 22, fontWeight: '700', color: c.text },
+  tileLabel: { fontSize: 13, color: c.textSecondary, marginTop: 2 },
+  tileMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
+  note: { fontSize: 13, color: c.textMuted, marginTop: 10 },
   card: {
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: c.divider,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -358,30 +360,30 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', gap: 14, paddingVertical: 8 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendSwatch: { width: 10, height: 10, borderRadius: 2 },
-  legendText: { fontSize: 12, color: '#444' },
+  legendText: { fontSize: 12, color: c.textSecondary },
   barRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
-  barLabel: { width: 92, fontSize: 12, color: '#444' },
+  barLabel: { width: 92, fontSize: 12, color: c.textSecondary },
   barTrack: {
     flex: 1,
     height: 14,
     flexDirection: 'row',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: c.surface,
     borderRadius: 3,
     overflow: 'hidden',
   },
-  barValue: { width: 40, textAlign: 'right', fontSize: 12, color: '#444' },
-  empty: { color: '#666', fontSize: 14 },
+  barValue: { width: 40, textAlign: 'right', fontSize: 12, color: c.textSecondary },
+  empty: { color: c.textMuted, fontSize: 14 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: c.surface,
   },
   rowMain: { flex: 1 },
-  rowName: { fontSize: 15 },
-  rowMeta: { fontSize: 12, color: '#666', marginTop: 2 },
-  rowValue: { fontSize: 15, fontWeight: '600' },
-  lowValue: { color: '#b45309' },
+  rowName: { fontSize: 15, color: c.text },
+  rowMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
+  rowValue: { fontSize: 15, fontWeight: '600', color: c.text },
+  lowValue: { color: c.warningText },
   bottomSpacer: { height: 40 },
 });
