@@ -9,34 +9,39 @@ row-level security). Runs on Android, iOS and the web.
 
 ## Features
 
+DSFMP serves a **network of schools**. Each school's students, readers, food
+stock and records are kept separate, and staff only see their own school.
+
 | Module | What it does |
 |---|---|
 | **Login** | Email/password sign-in with Supabase Auth. Sessions persist across app restarts. |
-| **Dashboard** | Live beneficiary count, navigation to each module, and a light/dark/system theme switch. |
-| **Beneficiaries** | Searchable list of learners with an add/edit form. |
+| **Dashboard** | The school's name, active beneficiary count and navigation to each module, plus a light/dark/system theme switch. Network admins choose which school to work on. |
+| **Beneficiaries** | Searchable list of the school's learners with an add/edit form. |
 | **Attendance** | Choose breakfast, lunch or supper and mark each active beneficiary present for today. Tap again to undo. Shows a present/total count and includes NFC scans. |
-| **Inventory** | Stock list with low-stock warnings. Add or edit items and record deliveries (*received*) or usage (*used*). A database trigger keeps stock levels correct and blocks using more than is in stock. |
+| **Inventory** | The school's stock list with low-stock warnings. Add or edit items and record deliveries (*received*) or usage (*used*). A database trigger keeps stock levels correct and blocks using more than is in stock. |
 | **Distribution** | Pick a food item and portion size, then issue it to beneficiaries. Each issue deducts stock and is blocked if stock is short. |
-| **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food distributed per item, and current stock with low-stock items flagged. |
-| **NFC scanning** | Card readers (e.g. an ESP32) call one database function, `record_nfc_scan()`, to record attendance or a distribution. Every scan is logged for audit. |
+| **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food distributed per item, and current stock with low-stock items flagged. Network admins can switch between one school and all schools. |
+| **NFC scanning** | Card readers (e.g. an ESP32) call one database function, `record_nfc_scan()`, to record attendance or a distribution. Each reader belongs to a school and only accepts that school's cards. Every scan is logged for audit. |
 
 ### Roles
 
 Every user has one role, and the database enforces it with row-level security:
 
-| Role | Can do |
-|---|---|
-| `admin` | Everything, including managing NFC devices and reading the NFC audit log |
-| `coordinator` | Manage beneficiaries, record attendance, issue food, manage reports |
-| `inventory_officer` | Manage inventory items and record stock movements |
+| Role | School | Can do |
+|---|---|---|
+| `network_admin` | All schools | Everything, at every school |
+| `admin` | One school | Everything at their school, including managing NFC devices, meal times and reading the NFC audit log |
+| `coordinator` | One school | Manage beneficiaries, record attendance, issue food, manage reports |
+| `inventory_officer` | One school | Manage inventory items and record stock movements |
 
-All signed-in users can view beneficiaries, attendance, inventory,
+All staff can view their own school's beneficiaries, attendance, inventory,
 distributions and reports.
 
 ### Meal serving windows
 
-NFC attendance scans are filed under the meal whose window they fall in
-(Africa/Nairobi time):
+Each school sets its own serving windows and timezone in the `schools` table.
+NFC attendance scans are filed under the meal whose window they fall in. New
+schools start with these defaults (Africa/Nairobi time):
 
 | Meal | Window |
 |---|---|
@@ -44,8 +49,8 @@ NFC attendance scans are filed under the meal whose window they fall in
 | Lunch | 12:00–14:00 |
 | Supper | 18:00–20:00 |
 
-Scans outside every window are rejected with `outside_meal_time`. To change
-the windows, edit `record_nfc_scan()` in `dsfmp-app/supabase/schema.sql`.
+Scans outside every window are rejected with `outside_meal_time`. Leave a
+meal's start and end empty if the school doesn't serve it.
 
 ## Tech stack
 
@@ -61,6 +66,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
   src/
     lib/supabase.ts         Supabase client (project URL + anon key)
     navigation/             Auth-based routing (logged out → Login)
+    school/SchoolContext.tsx  Signed-in user's profile and current school; use useSchool()
     screens/                One file per module (Login, Dashboard, Beneficiaries,
                             Attendance, Inventory, Distribution, Reports)
     theme/ThemeContext.tsx  Light/dark/system colours; use makeStyles + useThemedStyles
@@ -76,15 +82,22 @@ dsfmp-app/                  The Expo app (run all commands from here)
 
 | Table | Purpose |
 |---|---|
-| `users` | Profile and role for each Supabase Auth user, created automatically on sign-up |
-| `beneficiaries` | Learners in the programme, with their NFC tag IDs |
-| `nfc_devices` | Registered card readers |
-| `inventory_items` | Food items and current stock levels |
+| `schools` | Schools in the network, with each school's timezone and meal serving windows |
+| `users` | Profile, role and school for each Supabase Auth user, created automatically on sign-up |
+| `beneficiaries` | Learners at each school, with their NFC tag IDs |
+| `nfc_devices` | Registered card readers, each at one school |
+| `inventory_items` | Each school's food items and current stock levels |
 | `inventory_transactions` | Stock received or used. A trigger updates `inventory_items`. |
 | `meal_attendance` | One row per beneficiary, meal and day |
 | `food_distribution` | Food issued to beneficiaries. Stock is deducted automatically. |
 | `reports` | Saved reports (export is planned) |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |
+
+Every table except `schools` has a `school_id`. Attendance, distributions and
+stock movements take theirs automatically from the beneficiary or item, so a
+record can't end up filed under the wrong school. `nfc_tag_logs` deliberately
+has no foreign keys on the card and reader, so scans from unknown cards or
+unregistered readers are still recorded.
 
 ## Getting started
 
@@ -123,14 +136,26 @@ work (on school or office networks, for example), use `npx expo start --tunnel`.
 
 There is no sign-up screen yet, so create users in Supabase under
 **Authentication → Users → Add user**. A trigger adds a matching `users` row
-with the role `coordinator`. To test another role, change `role` to `admin`
-or `inventory_officer` in the Table Editor.
+with the role `coordinator` and no school. In the Table Editor, open `users`
+and:
+
+- set `school_id` to the user's school (from the `schools` table), and
+- change `role` if needed: `admin`, `inventory_officer`, or `network_admin`
+  (who doesn't need a school).
+
+Until a user has a school, the app shows them a "not assigned to a school"
+message. A new database starts with one school, **Jasiri School**. Add more
+schools as rows in the `schools` table.
 
 ## Development notes
 
 - Screens query Supabase directly (`supabase.from('table').select()`,
   `.insert()`, `.update()`). Permission rules live in the database's RLS
   policies, not in the app.
+- Every screen works on one school: get it with `useSchool()` and filter
+  queries with `.eq('school_id', school.school_id)`. Send `school_id` when
+  creating beneficiaries and inventory items; other tables fill it in
+  automatically.
 - Style screens with `makeStyles(c: Colors)` and `useThemedStyles` from
   `src/theme/ThemeContext.tsx` instead of hard-coding colours.
 - Database changes must go in both places: edit `schema.sql`, and add a new

@@ -6,7 +6,7 @@
 -- ============================================================
 with
 expected_tables(t) as (
-  values ('users'), ('beneficiaries'), ('nfc_devices'), ('inventory_items'),
+  values ('schools'), ('users'), ('beneficiaries'), ('nfc_devices'), ('inventory_items'),
          ('inventory_transactions'), ('meal_attendance'), ('food_distribution'),
          ('reports'), ('nfc_tag_logs')
 ),
@@ -19,7 +19,10 @@ tbl as (
 expected_triggers(tg, on_table) as (
   values ('on_auth_user_created', 'auth.users'),
          ('on_inventory_transaction_insert', 'public.inventory_transactions'),
-         ('on_food_distribution_insert', 'public.food_distribution')
+         ('on_food_distribution_insert', 'public.food_distribution'),
+         ('set_meal_attendance_school', 'public.meal_attendance'),
+         ('set_food_distribution_school', 'public.food_distribution'),
+         ('set_inventory_transaction_school', 'public.inventory_transactions')
 ),
 fn as (
   select p.proname, p.prosrc, p.proconfig, p.prosecdef
@@ -59,22 +62,63 @@ from expected_triggers
 union all
 select 4, 'Structure', 'Function ' || f || ' exists',
        case when exists (select 1 from fn where proname = f) then 'OK' else 'FAIL' end, ''
-from unnest(array['handle_new_user', 'has_any_role', 'record_nfc_scan',
-                  'apply_inventory_transaction', 'log_distribution_as_transaction']) f
+from unnest(array['handle_new_user', 'is_network_admin', 'can_view_school', 'has_school_role',
+                  'record_nfc_scan', 'apply_inventory_transaction', 'log_distribution_as_transaction',
+                  'set_school_from_beneficiary', 'set_school_from_item', 'set_distribution_school']) f
 union all
 select 5, 'Structure', 'Fix 001: distribution trigger pins search_path',
        case when exists (select 1 from fn where proname = 'log_distribution_as_transaction'
                          and array_to_string(proconfig, ',') like '%search_path%') then 'OK' else 'FAIL' end,
        'run supabase/fixes/001 if FAIL'
 union all
-select 6, 'Structure', 'Fix 002: NFC scans use Nairobi meal windows',
+select 6, 'Structure', 'Fix 002: NFC scans are filed by meal serving window',
        case when exists (select 1 from fn where proname = 'record_nfc_scan'
-                         and prosrc like '%Africa/Nairobi%' and prosrc like '%outside_meal_time%') then 'OK' else 'FAIL' end,
-       'run supabase/fixes/002 if FAIL'
+                         and prosrc like '%outside_meal_time%') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/002 and 003 if FAIL'
 union all
 select 7, 'Structure', 'One attendance per student per meal (unique index)',
        case when exists (select 1 from pg_indexes where schemaname = 'public'
                          and indexname = 'idx_meal_attendance_once_per_meal') then 'OK' else 'FAIL' end, ''
+union all
+select 8, 'Structure', 'Fix 003: NFC scans use the reader''s school',
+       case when exists (select 1 from fn where proname = 'record_nfc_scan'
+                         and prosrc like '%wrong_school%') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/003 if FAIL'
+
+-- ---------- SCHOOLS ----------
+union all
+select 15, 'Schools', 'Schools', 'INFO',
+       coalesce(string_agg(name || case when status = 'active' then '' else ' (inactive)' end, ', '
+                           order by name), 'no schools')
+from schools
+union all
+select 16, 'Schools', 'Staff assigned to a school',
+       case when count(*) = 0 then 'OK' else 'WARN' end,
+       count(*) || ' non-network-admin users with no school (they see nothing until assigned)'
+from public.users where role <> 'network_admin' and school_id is null
+union all
+select 17, 'Schools', 'Attendance filed under the student''s school',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       count(*) || ' attendance records with a different school than their student'
+from meal_attendance a join beneficiaries b using (beneficiary_id) where a.school_id <> b.school_id
+union all
+select 18, 'Schools', 'Distributions use food from the student''s school',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       count(*) || ' distributions where the item, student or record school differ'
+from food_distribution d
+join beneficiaries b using (beneficiary_id)
+join inventory_items i using (item_id)
+where d.school_id <> b.school_id or i.school_id <> b.school_id
+union all
+select 19, 'Schools', 'Stock movements filed under the item''s school',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       count(*) || ' transactions with a different school than their item'
+from inventory_transactions t join inventory_items i using (item_id) where t.school_id <> i.school_id
+union all
+select 19, 'Schools', 'NFC attendance read by a reader at the student''s school',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       count(*) || ' NFC attendance records from another school''s reader'
+from meal_attendance a join nfc_devices d using (device_id) where a.school_id <> d.school_id
 
 -- ---------- ACCOUNTS ----------
 union all
@@ -87,9 +131,9 @@ select 11, 'Accounts', 'Users per role', 'INFO',
        coalesce(string_agg(role || ': ' || n, ', '), 'no users')
 from (select role, count(*) n from public.users group by role order by role) r
 union all
-select 12, 'Accounts', 'At least one active admin',
+select 12, 'Accounts', 'At least one active admin or network admin',
        case when count(*) > 0 then 'OK' else 'WARN' end, count(*) || ' active admins'
-from public.users where role = 'admin' and status = 'active'
+from public.users where role in ('admin', 'network_admin') and status = 'active'
 union all
 select 13, 'Accounts', 'Profiles still named "New User"',
        case when count(*) = 0 then 'OK' else 'WARN' end,

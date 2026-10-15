@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { useSchool } from '../school/SchoolContext';
 
 type Item = {
   item_id: string;
@@ -40,6 +41,7 @@ function formatQty(qty: number, unit: string | null) {
 
 export default function DistributionScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
+  const { school } = useSchool();
   const [items, setItems] = useState<Item[]>([]);
   const [itemId, setItemId] = useState<string | null>(null);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
@@ -62,10 +64,12 @@ export default function DistributionScreen({ navigation }: any) {
       supabase
         .from('inventory_items')
         .select('item_id, item_name, quantity_available, unit')
+        .eq('school_id', school.school_id)
         .order('item_name'),
       supabase
         .from('beneficiaries')
         .select('beneficiary_id, full_name, admission_no')
+        .eq('school_id', school.school_id)
         .eq('status', 'active')
         .order('full_name'),
     ]);
@@ -84,7 +88,7 @@ export default function DistributionScreen({ navigation }: any) {
       );
     }
     setLoading(false);
-  }, []);
+  }, [school.school_id]);
 
   const loadIssued = useCallback(async () => {
     if (!itemId) {

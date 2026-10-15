@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { useSchool } from '../school/SchoolContext';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -40,6 +41,7 @@ const EMPTY_FORM: FormState = {
 
 export default function BeneficiariesScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
+  const { school } = useSchool();
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
     const { data, error } = await supabase
       .from('beneficiaries')
       .select('beneficiary_id, full_name, age, admission_no, nfc_tag_id, status')
+      .eq('school_id', school.school_id)
       .order('full_name');
     if (error) {
       setLoadError(error.message);
@@ -64,7 +67,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
       setBeneficiaries(data ?? []);
     }
     setLoading(false);
-  }, []);
+  }, [school.school_id]);
 
   useEffect(() => {
     loadBeneficiaries();
@@ -114,7 +117,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
     try {
       const query =
         editing === 'new'
-          ? supabase.from('beneficiaries').insert(payload)
+          ? supabase.from('beneficiaries').insert({ ...payload, school_id: school.school_id })
           : supabase
               .from('beneficiaries')
               .update(payload)
@@ -290,7 +293,7 @@ function describeError(error: { code?: string; message: string }) {
   if (error.code === '23505') {
     return error.message.includes('nfc_tag_id')
       ? 'That NFC tag is already assigned to another beneficiary.'
-      : 'That admission number is already registered.';
+      : 'That admission number is already registered at this school.';
   }
   if (error.code === '42501') {
     return 'You do not have permission to manage beneficiaries.';

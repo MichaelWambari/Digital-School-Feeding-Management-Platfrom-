@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeContext';
+import { SchoolProvider } from '../school/SchoolContext';
 
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -42,7 +43,7 @@ export default function AppNavigator() {
     colors: { ...baseTheme.colors, background: colors.background, primary: colors.primary },
   };
 
-  return (
+  const navigator = (
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {session ? (
@@ -59,5 +60,12 @@ export default function AppNavigator() {
         )}
       </Stack.Navigator>
     </NavigationContainer>
+  );
+
+  // Signed-in screens all work on one school; keyed by user so a new login reloads it.
+  return session ? (
+    <SchoolProvider key={session.user.id}>{navigator}</SchoolProvider>
+  ) : (
+    navigator
   );
 }

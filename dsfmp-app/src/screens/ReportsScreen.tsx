@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { useSchool } from '../school/SchoolContext';
 
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
@@ -33,6 +34,7 @@ type Item = {
   quantity_available: number;
   unit: string | null;
   reorder_level: number | null;
+  school_id: string;
 };
 
 type DayRow = { date: string; counts: Record<MealKey, number>; total: number };
@@ -81,6 +83,12 @@ async function fetchAllRows<T>(
 
 export default function ReportsScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
+  const { school, schools, isNetworkAdmin } = useSchool();
+  // Network admins can report on the selected school or the whole network.
+  const [scope, setScope] = useState<'school' | 'all'>('school');
+  const allSchools = isNetworkAdmin && scope === 'all';
+  const schoolIds = allSchools ? schools.map((s) => s.school_id) : [school.school_id];
+  const schoolKey = schoolIds.join(',');
   const [range, setRange] = useState<RangeKey>('week');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,15 +116,18 @@ export default function ReportsScreen({ navigation }: any) {
         supabase
           .from('beneficiaries')
           .select('*', { count: 'exact', head: true })
+          .in('school_id', schoolIds)
           .eq('status', 'active'),
         supabase
           .from('inventory_items')
-          .select('item_id, item_name, quantity_available, unit, reorder_level')
+          .select('item_id, item_name, quantity_available, unit, reorder_level, school_id')
+          .in('school_id', schoolIds)
           .order('item_name'),
         fetchAllRows<{ attendance_date: string; meal_type: string }>((from, to) =>
           supabase
             .from('meal_attendance')
             .select('attendance_date, meal_type')
+            .in('school_id', schoolIds)
             .gte('attendance_date', start)
             .lte('attendance_date', end)
             .order('attendance_id')
@@ -126,6 +137,7 @@ export default function ReportsScreen({ navigation }: any) {
           supabase
             .from('food_distribution')
             .select('item_id, quantity_issued')
+            .in('school_id', schoolIds)
             .gte('distribution_date', start)
             .lte('distribution_date', end)
             .order('distribution_id')
@@ -176,7 +188,8 @@ export default function ReportsScreen({ navigation }: any) {
     } finally {
       setLoading(false);
     }
-  }, [rangeDays]);
+    // schoolKey changes whenever schoolIds does, so it stands in for the array here.
+  }, [rangeDays, schoolKey]);
 
   useEffect(() => {
     loadReport();
@@ -184,6 +197,7 @@ export default function ReportsScreen({ navigation }: any) {
 
   const totalAttendance = mealTotals.breakfast + mealTotals.lunch + mealTotals.supper;
   const busiestDay = Math.max(1, ...days.map((d) => d.total));
+  const schoolName = (id: string) => schools.find((s) => s.school_id === id)?.name ?? '';
   const lowStock = items.filter(
     (i) => (i.reorder_level ?? 0) > 0 && i.quantity_available <= (i.reorder_level ?? 0)
   );
@@ -215,6 +229,23 @@ export default function ReportsScreen({ navigation }: any) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {isNetworkAdmin && schools.length > 1 && (
+        <View style={[styles.segment, styles.scopeSegment]}>
+          {(['school', 'all'] as const).map((s) => (
+            <TouchableOpacity
+              key={s}
+              style={[styles.segmentItem, scope === s && styles.segmentItemActive]}
+              onPress={() => setScope(s)}
+              accessibilityState={{ selected: scope === s }}
+            >
+              <Text style={[styles.segmentText, scope === s && styles.segmentTextActive]}>
+                {s === 'school' ? school.name : 'All schools'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {error && <Text style={styles.error}>{error}</Text>}
 
@@ -281,6 +312,7 @@ export default function ReportsScreen({ navigation }: any) {
               <View style={styles.rowMain}>
                 <Text style={styles.rowName}>{e.item.item_name}</Text>
                 <Text style={styles.rowMeta}>
+                  {allSchools ? `${schoolName(e.item.school_id)} · ` : ''}
                   {e.servings.toLocaleString()} {e.servings === 1 ? 'serving' : 'servings'}
                 </Text>
               </View>
@@ -308,6 +340,7 @@ export default function ReportsScreen({ navigation }: any) {
                 <View style={styles.rowMain}>
                   <Text style={styles.rowName}>{i.item_name}</Text>
                   <Text style={styles.rowMeta}>
+                    {allSchools ? `${schoolName(i.school_id)} · ` : ''}
                     Reorder at {formatQty(i.reorder_level ?? 0, i.unit)}
                   </Text>
                 </View>
@@ -337,6 +370,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   headerSpacer: { width: 60 },
   back: { color: c.primary, fontSize: 15 },
   segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
+  scopeSegment: { marginTop: 10 },
   segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
   segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
   segmentText: { fontSize: 14, color: c.textSecondary },

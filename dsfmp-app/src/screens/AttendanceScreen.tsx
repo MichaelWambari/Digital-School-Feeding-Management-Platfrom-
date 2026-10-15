@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { useSchool } from '../school/SchoolContext';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -36,6 +37,7 @@ function todayLocal() {
 
 export default function AttendanceScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
+  const { school } = useSchool();
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   // beneficiary_id -> attendance_id for today's selected meal
@@ -53,11 +55,13 @@ export default function AttendanceScreen({ navigation }: any) {
       supabase
         .from('beneficiaries')
         .select('beneficiary_id, full_name, admission_no')
+        .eq('school_id', school.school_id)
         .eq('status', 'active')
         .order('full_name'),
       supabase
         .from('meal_attendance')
         .select('attendance_id, beneficiary_id')
+        .eq('school_id', school.school_id)
         .eq('attendance_date', date)
         .eq('meal_type', mealType),
     ]);
@@ -72,7 +76,7 @@ export default function AttendanceScreen({ navigation }: any) {
       );
     }
     setLoading(false);
-  }, [date, mealType]);
+  }, [date, mealType, school.school_id]);
 
   useEffect(() => {
     loadData();

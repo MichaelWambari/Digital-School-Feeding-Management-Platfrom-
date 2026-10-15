@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, ThemePreference, useTheme, useThemedStyles } from '../theme/ThemeContext';
+import { ROLE_LABELS, useSchool } from '../school/SchoolContext';
 
 const MENU_ITEMS = [
   { label: 'Beneficiaries', screen: 'Beneficiaries', available: true },
@@ -20,19 +21,23 @@ const THEME_OPTIONS: { key: ThemePreference; label: string }[] = [
 export default function DashboardScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
   const { preference, setPreference } = useTheme();
+  const { profile, isNetworkAdmin, schools, school, setSchoolId } = useSchool();
   const [beneficiaryCount, setBeneficiaryCount] = useState<number | null>(null);
+
+  const loadStats = useCallback(async () => {
+    const { count } = await supabase
+      .from('beneficiaries')
+      .select('*', { count: 'exact', head: true })
+      .eq('school_id', school.school_id)
+      .eq('status', 'active');
+    setBeneficiaryCount(count ?? 0);
+  }, [school.school_id]);
 
   useEffect(() => {
     // Reload on every focus so the count reflects changes made on other screens.
+    loadStats();
     return navigation.addListener('focus', loadStats);
-  }, [navigation]);
-
-  async function loadStats() {
-    const { count } = await supabase
-      .from('beneficiaries')
-      .select('*', { count: 'exact', head: true });
-    setBeneficiaryCount(count ?? 0);
-  }
+  }, [navigation, loadStats]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -41,15 +46,47 @@ export default function DashboardScreen({ navigation }: any) {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Dashboard</Text>
+        <View style={styles.headerMain}>
+          <Text style={styles.headerTitle}>{school.name}</Text>
+          <Text style={styles.headerMeta}>
+            {profile.full_name} · {ROLE_LABELS[profile.role]}
+          </Text>
+        </View>
         <TouchableOpacity onPress={handleLogout}>
           <Text style={styles.logout}>Logout</Text>
         </TouchableOpacity>
       </View>
 
+      {isNetworkAdmin && schools.length > 1 && (
+        <>
+          <Text style={styles.sectionLabel}>School</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chips}
+            contentContainerStyle={styles.chipsContent}
+          >
+            {schools.map((s) => (
+              <TouchableOpacity
+                key={s.school_id}
+                style={[styles.chip, s.school_id === school.school_id && styles.chipActive]}
+                onPress={() => setSchoolId(s.school_id)}
+                accessibilityState={{ selected: s.school_id === school.school_id }}
+              >
+                <Text
+                  style={[styles.chipText, s.school_id === school.school_id && styles.chipTextActive]}
+                >
+                  {s.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
+
       <View style={styles.statCard}>
         <Text style={styles.statNumber}>{beneficiaryCount ?? '—'}</Text>
-        <Text style={styles.statLabel}>Total beneficiaries</Text>
+        <Text style={styles.statLabel}>Active beneficiaries</Text>
       </View>
 
       <View style={styles.menu}>
@@ -96,8 +133,23 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  headerMain: { flex: 1, marginRight: 12 },
   headerTitle: { fontSize: 22, fontWeight: '700', color: c.text },
+  headerMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   logout: { color: c.danger, fontSize: 14 },
+  sectionLabel: { fontSize: 13, color: c.textSecondary, marginBottom: 8 },
+  chips: { flexGrow: 0, marginBottom: 20 },
+  chipsContent: { gap: 8 },
+  chip: {
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  chipActive: { backgroundColor: c.primary, borderColor: c.primary },
+  chipText: { fontSize: 14, color: c.text },
+  chipTextActive: { color: c.onPrimary, fontWeight: '600' },
   statCard: {
     backgroundColor: c.surface,
     borderRadius: 12,

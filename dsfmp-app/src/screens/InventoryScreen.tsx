@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { useSchool } from '../school/SchoolContext';
 
 type Item = {
   item_id: string;
@@ -45,6 +46,7 @@ function formatQty(qty: number, unit: string | null) {
 
 export default function InventoryScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
+  const { school } = useSchool();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export default function InventoryScreen({ navigation }: any) {
     const { data, error } = await supabase
       .from('inventory_items')
       .select('item_id, item_name, quantity_available, unit, reorder_level')
+      .eq('school_id', school.school_id)
       .order('item_name');
     if (error) {
       setLoadError(error.message);
@@ -66,7 +69,7 @@ export default function InventoryScreen({ navigation }: any) {
       setItems(data ?? []);
     }
     setLoading(false);
-  }, []);
+  }, [school.school_id]);
 
   useEffect(() => {
     loadItems();
@@ -153,6 +156,7 @@ function ItemFormView({
   onDone: (saved: boolean) => void;
 }) {
   const { colors, styles } = useThemedStyles(makeStyles);
+  const { school } = useSchool();
   const [form, setForm] = useState<ItemForm>(
     target === 'new'
       ? EMPTY_ITEM_FORM
@@ -189,7 +193,7 @@ function ItemFormView({
     try {
       const query =
         target === 'new'
-          ? supabase.from('inventory_items').insert(payload)
+          ? supabase.from('inventory_items').insert({ ...payload, school_id: school.school_id })
           : supabase.from('inventory_items').update(payload).eq('item_id', target.item_id);
       // .select() makes RLS-blocked updates visible: they succeed with zero rows.
       const { data, error } = await query.select('item_id');
