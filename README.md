@@ -155,7 +155,6 @@ identifiers in `dsfmp-app/app.json`.
 Progress is tracked in
 [GitHub milestones](https://github.com/MichaelWambari/Digital-School-Feeding-Management-Platfrom-/milestones):
 
-1. **M1: Stabilise & test.** End-to-end testing of each role, login errors on web, NFC error handling, and accurate attendance %.
-2. **M2: Admin & reporting.** In-app user and role management, and PDF/CSV report export.
-3. **M3: Operational flexibility.** Configurable meal windows and correcting mistaken distributions.
-4. **M4: Release.** Production build and final documentation.
+1. **Sprint I: Foundation.** Keys moved out of the code, seed data, automated checks, and NFC reader hardware procured and wired.
+2. **Sprint II: Core workflow & testing.** Card tap → reader → database → app end to end (with a reader simulator until the hardware arrives), ESP32 firmware, a test record, and latency and reliability measurements.
+3. **Sprint III: Completion & hosting.** Web hosting on Cloudflare Pages, an Android build, multi-school support, offline buffering on the reader, the remaining features, and user acceptance testing.
