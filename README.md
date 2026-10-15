@@ -67,6 +67,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
   supabase/
     schema.sql              Full database: tables, RLS policies, triggers, functions
     fixes/NNN_*.sql         Migrations for an existing database, run in number order
+    checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
 ```
 
 ## Database
