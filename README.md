@@ -74,6 +74,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
     schema.sql              Full database: tables, RLS policies, triggers, functions
     fixes/NNN_*.sql         Migrations for an existing database, run in number order
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
+    seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
 ```
 
 ## Database
@@ -119,6 +120,13 @@ unregistered readers are still recorded.
 > an existing database, run the files in `dsfmp-app/supabase/fixes/` in number order
 > instead. `schema.sql` already includes every fix, so a new database doesn't
 > need them.
+
+3. Optional: run `dsfmp-app/supabase/seed/demo_data.sql` to load demo data.
+   It adds three more schools (Tumaini, Upendo and Baraka), each with
+   test students and NFC card IDs, a registered reader, food stock, and a week
+   of past attendance and lunch distributions, plus a reader for Jasiri
+   School. It only adds missing rows, so it's safe to run again or on a live
+   database.
 
 ### 2. Install and run
 
