@@ -8,7 +8,7 @@ import { SchoolProvider } from '../school/SchoolContext';
 
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
-import BeneficiariesScreen from '../screens/BeneficiariesScreen';
+import StudentsScreen from '../screens/StudentsScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import InventoryScreen from '../screens/InventoryScreen';
 import DistributionScreen from '../screens/DistributionScreen';
@@ -49,7 +49,7 @@ export default function AppNavigator() {
         {session ? (
           <>
             <Stack.Screen name="Dashboard" component={DashboardScreen} />
-            <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} />
+            <Stack.Screen name="Students" component={StudentsScreen} />
             <Stack.Screen name="Attendance" component={AttendanceScreen} />
             <Stack.Screen name="Inventory" component={InventoryScreen} />
             <Stack.Screen name="Distribution" component={DistributionScreen} />

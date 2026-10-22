@@ -13,13 +13,13 @@ import {
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
+import CentralStoreScreen from './CentralStoreScreen';
 
 type Item = {
   item_id: string;
-  item_name: string;
   quantity_available: number;
-  unit: string | null;
   reorder_level: number | null;
+  food_items: { item_name: string; unit: string };
 };
 
 type Transaction = {
@@ -27,13 +27,16 @@ type Transaction = {
   transaction_type: 'received' | 'used';
   quantity: number;
   transaction_date: string;
+  food_consumption: { meal_type: string } | null;
 };
 
-type ItemForm = { item_name: string; unit: string; reorder_level: string };
+const MEAL_LABELS: Record<string, string> = {
+  breakfast: 'breakfast',
+  lunch: 'lunch',
+  supper: 'supper',
+};
 
-const EMPTY_ITEM_FORM: ItemForm = { item_name: '', unit: 'kg', reorder_level: '0' };
-
-const NO_PERMISSION = 'Only admins and inventory officers can change stock.';
+const NO_PERMISSION = 'Only admins and inventory officers can change reorder levels.';
 const CONNECTION_ERROR = 'Unable to connect. Check your connection and try again.';
 
 function isLowStock(item: Item) {
@@ -41,32 +44,35 @@ function isLowStock(item: Item) {
 }
 
 function formatQty(qty: number, unit: string | null) {
-  return `${Number(qty).toLocaleString()} ${unit ?? ''}`.trim();
+  return `${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
 }
 
-export default function InventoryScreen({ navigation }: any) {
+// Network admins manage the central store; school staff see their school's stock.
+export default function InventoryScreen(props: any) {
+  const { isNetworkAdmin } = useSchool();
+  return isNetworkAdmin ? <CentralStoreScreen {...props} /> : <SchoolInventoryScreen {...props} />;
+}
+
+function SchoolInventoryScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
   const { school } = useSchool();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Which view is showing: the list, the add/edit item form, or one item's stock detail.
-  const [formTarget, setFormTarget] = useState<Item | 'new' | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('inventory_items')
-      .select('item_id, item_name, quantity_available, unit, reorder_level')
-      .eq('school_id', school.school_id)
-      .order('item_name');
+      .select('item_id, quantity_available, reorder_level, food_items(item_name, unit)')
+      .eq('school_id', school.school_id);
     if (error) {
       setLoadError(error.message);
     } else {
       setLoadError(null);
-      setItems(data ?? []);
+      const loaded = (data ?? []) as unknown as Item[];
+      setItems(loaded.sort((a, b) => a.food_items.item_name.localeCompare(b.food_items.item_name)));
     }
     setLoading(false);
   }, [school.school_id]);
@@ -75,26 +81,13 @@ export default function InventoryScreen({ navigation }: any) {
     loadItems();
   }, [loadItems]);
 
-  if (formTarget) {
-    return (
-      <ItemFormView
-        target={formTarget}
-        onDone={async (saved) => {
-          setFormTarget(null);
-          if (saved) await loadItems();
-        }}
-      />
-    );
-  }
-
   const detailItem = detailId ? items.find((i) => i.item_id === detailId) : undefined;
   if (detailItem) {
     return (
       <StockDetailView
         item={detailItem}
         onBack={() => setDetailId(null)}
-        onEdit={() => setFormTarget(detailItem)}
-        onStockChanged={loadItems}
+        onChanged={loadItems}
       />
     );
   }
@@ -108,17 +101,20 @@ export default function InventoryScreen({ navigation }: any) {
           <Text style={styles.link}>‹ Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Inventory</Text>
-        <TouchableOpacity onPress={() => setFormTarget('new')}>
-          <Text style={[styles.link, styles.linkStrong]}>+ Add</Text>
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.summary}>
         <Text style={styles.summaryNumber}>{items.length}</Text>
         <Text style={styles.summaryLabel}>
-          items · {lowCount === 0 ? 'none low on stock' : `${lowCount} low on stock`}
+          foods in stock · {lowCount === 0 ? 'none low on stock' : `${lowCount} low on stock`}
         </Text>
       </View>
+
+      <Text style={styles.hint}>
+        Stock arrives from the central store (confirm deliveries on the Distribution screen) and
+        goes down as food used at meals is recorded there.
+      </Text>
 
       {loadError && <Text style={styles.error}>Could not load inventory: {loadError}</Text>}
 
@@ -127,18 +123,22 @@ export default function InventoryScreen({ navigation }: any) {
         keyExtractor={(i) => i.item_id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadItems} />}
         ListEmptyComponent={
-          loading ? null : <Text style={styles.empty}>No inventory items yet.</Text>
+          loading ? null : (
+            <Text style={styles.empty}>No stock yet. Food appears here once a delivery is confirmed.</Text>
+          )
         }
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.row} onPress={() => setDetailId(item.item_id)}>
             <View style={styles.rowMain}>
-              <Text style={styles.rowName}>{item.item_name}</Text>
+              <Text style={styles.rowName}>{item.food_items.item_name}</Text>
               <Text style={styles.rowMeta}>
-                Reorder at {formatQty(item.reorder_level ?? 0, item.unit)}
+                Reorder at {formatQty(item.reorder_level ?? 0, item.food_items.unit)}
               </Text>
             </View>
             <View style={styles.rowRight}>
-              <Text style={styles.rowQty}>{formatQty(item.quantity_available, item.unit)}</Text>
+              <Text style={styles.rowQty}>
+                {formatQty(item.quantity_available, item.food_items.unit)}
+              </Text>
               {isLowStock(item) && <Text style={styles.lowBadge}>Low stock</Text>}
             </View>
           </TouchableOpacity>
@@ -148,143 +148,20 @@ export default function InventoryScreen({ navigation }: any) {
   );
 }
 
-function ItemFormView({
-  target,
-  onDone,
-}: {
-  target: Item | 'new';
-  onDone: (saved: boolean) => void;
-}) {
-  const { colors, styles } = useThemedStyles(makeStyles);
-  const { school } = useSchool();
-  const [form, setForm] = useState<ItemForm>(
-    target === 'new'
-      ? EMPTY_ITEM_FORM
-      : {
-          item_name: target.item_name,
-          unit: target.unit ?? '',
-          reorder_level: String(target.reorder_level ?? 0),
-        }
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    const itemName = form.item_name.trim();
-    const reorderLevel = Number(form.reorder_level.trim() || '0');
-    if (!itemName) {
-      setError('Item name is required.');
-      return;
-    }
-    if (!Number.isFinite(reorderLevel) || reorderLevel < 0) {
-      setError('Reorder level must be zero or a positive number.');
-      return;
-    }
-
-    // Only these columns are writable; quantity_available changes through transactions.
-    const payload = {
-      item_name: itemName,
-      unit: form.unit.trim() || null,
-      reorder_level: reorderLevel,
-    };
-
-    setSaving(true);
-    setError(null);
-    try {
-      const query =
-        target === 'new'
-          ? supabase.from('inventory_items').insert({ ...payload, school_id: school.school_id })
-          : supabase.from('inventory_items').update(payload).eq('item_id', target.item_id);
-      // .select() makes RLS-blocked updates visible: they succeed with zero rows.
-      const { data, error } = await query.select('item_id');
-      if (error) {
-        setError(error.code === '42501' ? NO_PERMISSION : error.message);
-        return;
-      }
-      if (!data || data.length === 0) {
-        setError(NO_PERMISSION);
-        return;
-      }
-      onDone(true);
-    } catch {
-      setError(CONNECTION_ERROR);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => onDone(false)} disabled={saving}>
-          <Text style={styles.link}>‹ Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{target === 'new' ? 'Add item' : 'Edit item'}</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <Text style={styles.label}>Item name *</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
-        value={form.item_name}
-        onChangeText={(item_name) => setForm({ ...form, item_name })}
-        placeholder="e.g. Maize flour"
-      />
-
-      <Text style={styles.label}>Unit</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
-        value={form.unit}
-        onChangeText={(unit) => setForm({ ...form, unit })}
-        autoCapitalize="none"
-        placeholder="e.g. kg, litres, packets"
-      />
-
-      <Text style={styles.label}>Reorder level</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
-        value={form.reorder_level}
-        onChangeText={(reorder_level) => setForm({ ...form, reorder_level })}
-        keyboardType="decimal-pad"
-        placeholder="Warn when stock falls to this amount"
-      />
-
-      {target === 'new' && (
-        <Text style={styles.hint}>
-          New items start at zero. Record a delivery from the item's page to add stock.
-        </Text>
-      )}
-
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
-        {saving ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={styles.buttonText}>Save</Text>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
-  );
-}
-
 function StockDetailView({
   item,
   onBack,
-  onEdit,
-  onStockChanged,
+  onChanged,
 }: {
   item: Item;
   onBack: () => void;
-  onEdit: () => void;
-  onStockChanged: () => Promise<void>;
+  onChanged: () => Promise<void>;
 }) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const [type, setType] = useState<'received' | 'used'>('received');
-  const [quantity, setQuantity] = useState('');
+  const { profile } = useSchool();
+  const canEdit = profile.role === 'admin' || profile.role === 'inventory_officer';
+  const unit = item.food_items.unit;
+  const [reorderLevel, setReorderLevel] = useState(String(item.reorder_level ?? 0));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<Transaction[]>([]);
@@ -294,11 +171,11 @@ function StockDetailView({
     setHistoryLoading(true);
     const { data, error } = await supabase
       .from('inventory_transactions')
-      .select('transaction_id, transaction_type, quantity, transaction_date')
+      .select('transaction_id, transaction_type, quantity, transaction_date, food_consumption(meal_type)')
       .eq('item_id', item.item_id)
       .order('created_at', { ascending: false })
-      .limit(10);
-    if (!error) setHistory(data ?? []);
+      .limit(15);
+    if (!error) setHistory((data ?? []) as unknown as Transaction[]);
     setHistoryLoading(false);
   }, [item.item_id]);
 
@@ -306,38 +183,30 @@ function StockDetailView({
     loadHistory();
   }, [loadHistory]);
 
-  async function handleRecord() {
-    const qty = Number(quantity.trim());
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setError('Enter a quantity greater than zero.');
+  async function handleSaveReorderLevel() {
+    const level = Number(reorderLevel.trim() || '0');
+    if (!Number.isFinite(level) || level < 0) {
+      setError('Reorder level must be zero or a positive number.');
       return;
     }
-
     setSaving(true);
     setError(null);
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      // A database trigger updates quantity_available and rejects overdrawn stock.
-      const { error } = await supabase.from('inventory_transactions').insert({
-        item_id: item.item_id,
-        transaction_type: type,
-        quantity: qty,
-        recorded_by: auth.user?.id ?? null,
-      });
+      // .select() makes RLS-blocked updates visible: they succeed with zero rows.
+      const { data, error } = await supabase
+        .from('inventory_items')
+        .update({ reorder_level: level })
+        .eq('item_id', item.item_id)
+        .select('item_id');
       if (error) {
-        if (error.code === '23514') {
-          setError(
-            `Not enough stock: only ${formatQty(item.quantity_available, item.unit)} available.`
-          );
-        } else if (error.code === '42501') {
-          setError(NO_PERMISSION);
-        } else {
-          setError(error.message);
-        }
+        setError(error.code === '42501' ? NO_PERMISSION : error.message);
         return;
       }
-      setQuantity('');
-      await Promise.all([onStockChanged(), loadHistory()]);
+      if (!data || data.length === 0) {
+        setError(NO_PERMISSION);
+        return;
+      }
+      await onChanged();
     } catch {
       setError(CONNECTION_ERROR);
     } finally {
@@ -351,57 +220,40 @@ function StockDetailView({
         <TouchableOpacity onPress={onBack} disabled={saving}>
           <Text style={styles.link}>‹ Inventory</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onEdit} disabled={saving}>
-          <Text style={styles.link}>Edit</Text>
-        </TouchableOpacity>
       </View>
 
-      <Text style={styles.detailTitle}>{item.item_name}</Text>
+      <Text style={styles.detailTitle}>{item.food_items.item_name}</Text>
       <View style={[styles.summary, isLowStock(item) && styles.summaryLow]}>
-        <Text style={styles.summaryNumber}>{formatQty(item.quantity_available, item.unit)}</Text>
+        <Text style={styles.summaryNumber}>{formatQty(item.quantity_available, unit)}</Text>
         <Text style={styles.summaryLabel}>
-          in stock · reorder at {formatQty(item.reorder_level ?? 0, item.unit)}
+          in stock · reorder at {formatQty(item.reorder_level ?? 0, unit)}
           {isLowStock(item) ? ' · LOW' : ''}
         </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Record stock movement</Text>
-      <View style={styles.segment}>
-        {(['received', 'used'] as const).map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.segmentItem, type === t && styles.segmentItemActive]}
-            onPress={() => setType(t)}
-            accessibilityState={{ selected: type === t }}
-          >
-            <Text style={[styles.segmentText, type === t && styles.segmentTextActive]}>
-              {t === 'received' ? 'Received (delivery)' : 'Used'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Quantity{item.unit ? ` (${item.unit})` : ''}</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
-        value={quantity}
-        onChangeText={setQuantity}
-        keyboardType="decimal-pad"
-        placeholder="0"
-      />
-
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      <TouchableOpacity style={styles.button} onPress={handleRecord} disabled={saving}>
-        {saving ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={styles.buttonText}>
-            {type === 'received' ? 'Add to stock' : 'Remove from stock'}
-          </Text>
-        )}
-      </TouchableOpacity>
+      {canEdit && (
+        <>
+          <Text style={styles.label}>Reorder level ({unit})</Text>
+          <View style={styles.inlineRow}>
+            <TextInput
+              style={[styles.input, styles.inlineInput]}
+              placeholderTextColor={colors.placeholder}
+              value={reorderLevel}
+              onChangeText={setReorderLevel}
+              keyboardType="decimal-pad"
+              placeholder="Warn when stock falls to this amount"
+            />
+            <TouchableOpacity style={styles.inlineButton} onPress={handleSaveReorderLevel} disabled={saving}>
+              {saving ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.buttonText}>Save</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          {error && <Text style={styles.error}>{error}</Text>}
+        </>
+      )}
 
       <Text style={styles.sectionTitle}>Recent movements</Text>
       {historyLoading ? (
@@ -409,15 +261,27 @@ function StockDetailView({
       ) : history.length === 0 ? (
         <Text style={styles.emptyLeft}>No stock movements recorded yet.</Text>
       ) : (
-        history.map((t) => (
-          <View key={t.transaction_id} style={styles.row}>
-            <Text style={styles.historyDate}>{t.transaction_date}</Text>
-            <Text style={t.transaction_type === 'received' ? styles.qtyIn : styles.qtyOut}>
-              {t.transaction_type === 'received' ? '+' : '−'}
-              {formatQty(t.quantity, item.unit)}
-            </Text>
-          </View>
-        ))
+        history.map((t) => {
+          const meal = t.food_consumption?.meal_type;
+          return (
+            <View key={t.transaction_id} style={styles.row}>
+              <View style={styles.rowMain}>
+                <Text style={styles.rowName}>
+                  {t.transaction_type === 'received'
+                    ? 'Received from central store'
+                    : meal
+                      ? `Used at ${MEAL_LABELS[meal] ?? meal}`
+                      : 'Used'}
+                </Text>
+                <Text style={styles.rowMeta}>{t.transaction_date}</Text>
+              </View>
+              <Text style={t.transaction_type === 'received' ? styles.qtyIn : styles.qtyOut}>
+                {t.transaction_type === 'received' ? '+' : '−'}
+                {formatQty(t.quantity, unit)}
+              </Text>
+            </View>
+          );
+        })
       )}
       <View style={styles.bottomSpacer} />
     </ScrollView>
@@ -435,10 +299,9 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
   headerSpacer: { width: 60 },
   link: { color: c.primary, fontSize: 15 },
-  linkStrong: { fontWeight: '600' },
   detailTitle: { fontSize: 22, fontWeight: '700', marginBottom: 12, color: c.text },
   sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 24, marginBottom: 10, color: c.text },
-  summary: { backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 16 },
+  summary: { backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
   summaryLow: { backgroundColor: c.warningBg },
   summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
   summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
@@ -452,20 +315,18 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     fontSize: 15,
     color: c.text,
   },
-  hint: { fontSize: 13, color: c.textMuted, marginTop: 12 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
+  inlineRow: { flexDirection: 'row', gap: 8 },
+  inlineInput: { flex: 1 },
+  inlineButton: {
     backgroundColor: c.primary,
     borderRadius: 8,
-    paddingVertical: 14,
-    marginTop: 20,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+    minWidth: 76,
     alignItems: 'center',
   },
+  hint: { fontSize: 13, color: c.textMuted, marginBottom: 4 },
+  error: { color: c.danger, fontSize: 13, marginTop: 12 },
   buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
   empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
   emptyLeft: { color: c.textMuted },
@@ -478,7 +339,6 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     borderBottomColor: c.divider,
   },
   rowMain: { flex: 1 },
-  historyDate: { flex: 1, color: c.text },
   rowName: { fontSize: 16, color: c.text },
   rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
   rowRight: { alignItems: 'flex-end' },

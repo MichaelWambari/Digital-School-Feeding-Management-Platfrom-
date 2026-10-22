@@ -37,7 +37,8 @@ function todayLocal() {
 
 export default function AttendanceScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school } = useSchool();
+  // Network admins can look at any school's attendance; the school's own staff record it.
+  const { school, isNetworkAdmin } = useSchool();
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   // beneficiary_id -> attendance_id for today's selected meal
@@ -191,6 +192,10 @@ export default function AttendanceScreen({ navigation }: any) {
         <Text style={styles.summaryLabel}>present · {date}</Text>
       </View>
 
+      {isNetworkAdmin && (
+        <Text style={styles.viewOnly}>View only. {school.name}'s staff record its attendance.</Text>
+      )}
+
       <TextInput
         style={styles.input}
         placeholderTextColor={colors.placeholder}
@@ -211,7 +216,7 @@ export default function AttendanceScreen({ navigation }: any) {
         ListEmptyComponent={
           loading ? null : (
             <Text style={styles.empty}>
-              {term ? 'No beneficiaries match your search.' : 'No active beneficiaries.'}
+              {term ? 'No students match your search.' : 'No active students.'}
             </Text>
           )
         }
@@ -225,9 +230,13 @@ export default function AttendanceScreen({ navigation }: any) {
                 <Text style={styles.rowMeta}>{item.admission_no}</Text>
               </View>
               <TouchableOpacity
-                style={[styles.markButton, isPresent && styles.markButtonDone]}
+                style={[
+                  styles.markButton,
+                  isPresent && styles.markButtonDone,
+                  isNetworkAdmin && !isPresent && styles.markButtonViewOnly,
+                ]}
                 onPress={() => (isPresent ? undoPresent(item) : markPresent(item))}
-                disabled={isBusy || busyId !== null}
+                disabled={isNetworkAdmin || isBusy || busyId !== null}
                 accessibilityLabel={
                   isPresent
                     ? `${item.full_name} is present. Tap to undo.`
@@ -237,8 +246,14 @@ export default function AttendanceScreen({ navigation }: any) {
                 {isBusy ? (
                   <ActivityIndicator color={isPresent ? colors.successText : colors.onPrimary} />
                 ) : (
-                  <Text style={[styles.markText, isPresent && styles.markTextDone]}>
-                    {isPresent ? '✓ Present' : 'Mark present'}
+                  <Text
+                    style={[
+                      styles.markText,
+                      isPresent && styles.markTextDone,
+                      isNetworkAdmin && !isPresent && styles.markTextViewOnly,
+                    ]}
+                  >
+                    {isPresent ? '✓ Present' : isNetworkAdmin ? 'Not recorded' : 'Mark present'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -274,6 +289,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   },
   summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
   summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
+  viewOnly: { fontSize: 13, color: c.textMuted, marginBottom: 12 },
   input: {
     borderWidth: 1,
     borderColor: c.border,
@@ -305,6 +321,8 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     alignItems: 'center',
   },
   markButtonDone: { backgroundColor: c.successBg },
+  markButtonViewOnly: { backgroundColor: c.surface },
   markText: { color: c.onPrimary, fontSize: 14, fontWeight: '600' },
   markTextDone: { color: c.successText },
+  markTextViewOnly: { color: c.textMuted, fontWeight: '400' },
 });

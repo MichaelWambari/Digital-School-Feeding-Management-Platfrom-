@@ -3,24 +3,30 @@
 --
 -- Loads three demo schools alongside Jasiri School, each with
 -- test students (with NFC card IDs), a registered NFC reader,
--- opening food stock, and a week of past attendance and lunch
--- distributions so Reports has something to show. Jasiri School
--- also gets a reader; its existing data is left as it is.
+-- food received from the central store, and a week of past
+-- attendance and food used at meals so Reports has something to
+-- show. Jasiri School also gets a reader; its existing data is
+-- left as it is.
 --
 --   Tumaini School (Nakuru)  boarding: breakfast, lunch, supper, every day
 --   Upendo School (Kisumu)   day school: lunch only, weekdays
 --   Baraka School (Mombasa)  day school: breakfast and lunch, weekdays
 --
+-- The central store gets a delivery of each food. Each school's
+-- opening stock is a dispatch from the store that the school has
+-- confirmed (Baraka's beans arrived 2 kg short), and Tumaini has
+-- one more rice dispatch still in transit, ready to confirm.
+--
 -- All names and card IDs are made up. Safe to run on a live
 -- database and safe to run again: it only adds rows that are
 -- missing and never changes or deletes existing data.
--- Run after schema.sql (or fixes 001-003), in Supabase:
+-- Run after schema.sql (or fixes 001-004), in Supabase:
 -- SQL Editor > New query > paste > Run.
 -- ============================================================
 
 begin;
 
--- Deliveries, attendance and distributions are recorded as the first
+-- Deliveries, attendance and food used are recorded as the first
 -- active network admin (or admin), so records say who entered them.
 create temp table seed_user on commit drop as
   select user_id from public.users
@@ -85,37 +91,88 @@ join schools s on s.name = v.school
 on conflict do nothing; -- skips students whose admission no. or card ID already exists
 
 -- ------------------------------------------------------------
--- Food items and opening stock. Stock only changes through
--- transactions, so each new item gets an opening delivery.
--- Baraka's beans start below the reorder level to show a warning.
+-- The food list and a delivery of each food into the central
+-- store. Stock only changes through transactions, so a food
+-- with no store history gets one delivery.
 -- ------------------------------------------------------------
-create temp table seed_items on commit drop as
-select * from (values
-  ('Tumaini School', 'Rice',        'kg',     10, 50),
-  ('Tumaini School', 'Maize flour', 'kg',     15, 60),
-  ('Tumaini School', 'Beans',       'kg',      8, 30),
-  ('Tumaini School', 'Cooking oil', 'litres',  2, 10),
-  ('Upendo School',  'Maize flour', 'kg',     15, 40),
-  ('Upendo School',  'Beans',       'kg',      8, 25),
-  ('Upendo School',  'Cooking oil', 'litres',  2,  8),
-  ('Baraka School',  'Rice',        'kg',     10, 45),
-  ('Baraka School',  'Beans',       'kg',      8,  5),
-  ('Baraka School',  'Cooking oil', 'litres',  2,  6)
-) as v(school, item_name, unit, reorder_level, opening_stock);
+insert into food_items (item_name, unit, reorder_level)
+values
+  ('Rice',        'kg',     200),
+  ('Maize flour', 'kg',     200),
+  ('Beans',       'kg',     100),
+  ('Cooking oil', 'litres',  20)
+on conflict do nothing;
 
-insert into inventory_items (school_id, item_name, unit, reorder_level)
-select s.school_id, v.item_name, v.unit, v.reorder_level
-from seed_items v
+insert into central_transactions (food_id, transaction_type, quantity, transaction_date, recorded_by)
+select f.food_id, 'received', v.quantity, (now() at time zone 'Africa/Nairobi')::date - 10,
+       (select user_id from seed_user)
+from (values
+  ('Rice',        1000),
+  ('Maize flour', 1000),
+  ('Beans',        500),
+  ('Cooking oil',  100)
+) as v(item_name, quantity)
+join food_items f on lower(f.item_name) = lower(v.item_name)
+where not exists (select 1 from central_transactions t where t.food_id = f.food_id);
+
+-- ------------------------------------------------------------
+-- Opening stock: one dispatch per school and food, sent 8 days
+-- ago and confirmed by the school the next day. Only added for
+-- foods the school doesn't stock yet.
+-- ------------------------------------------------------------
+create temp table seed_dispatches on commit drop as
+select s.school_id, f.food_id, v.sent, v.received, v.reorder_level
+from (values
+  ('Tumaini School', 'Rice',        50, 50, 10),
+  ('Tumaini School', 'Maize flour', 60, 60, 15),
+  ('Tumaini School', 'Beans',       30, 30,  8),
+  ('Tumaini School', 'Cooking oil', 10, 10,  2),
+  ('Upendo School',  'Maize flour', 40, 40, 15),
+  ('Upendo School',  'Beans',       25, 25,  8),
+  ('Upendo School',  'Cooking oil',  8,  8,  2),
+  ('Baraka School',  'Rice',        45, 45, 10),
+  ('Baraka School',  'Beans',        8,  6,  8),
+  ('Baraka School',  'Cooking oil',  6,  6,  2)
+) as v(school, item_name, sent, received, reorder_level)
 join schools s on s.name = v.school
+join food_items f on lower(f.item_name) = lower(v.item_name)
 where not exists (select 1 from inventory_items i
-                  where i.school_id = s.school_id and i.item_name = v.item_name);
+                  where i.school_id = s.school_id and i.food_id = f.food_id);
 
-insert into inventory_transactions (item_id, transaction_type, quantity, recorded_by)
-select i.item_id, 'received', v.opening_stock, (select user_id from seed_user)
-from seed_items v
-join schools s on s.name = v.school
-join inventory_items i on i.school_id = s.school_id and i.item_name = v.item_name
-where not exists (select 1 from inventory_transactions t where t.item_id = i.item_id);
+-- Inserting a dispatch takes the food out of the central store.
+insert into food_distribution (school_id, food_id, quantity_dispatched, dispatch_date, dispatched_by)
+select school_id, food_id, sent, (now() at time zone 'Africa/Nairobi')::date - 8,
+       (select user_id from seed_user)
+from seed_dispatches;
+
+-- Confirm them, as receive_distribution() would.
+insert into inventory_items (school_id, food_id, reorder_level)
+select school_id, food_id, reorder_level from seed_dispatches
+on conflict (school_id, food_id) do nothing;
+
+update food_distribution d
+set status = 'received', quantity_received = sd.received,
+    received_date = d.dispatch_date + 1, received_by = d.dispatched_by
+from seed_dispatches sd
+where d.school_id = sd.school_id and d.food_id = sd.food_id and d.status = 'in_transit';
+
+insert into inventory_transactions
+    (item_id, transaction_type, quantity, transaction_date, distribution_id, recorded_by)
+select i.item_id, 'received', d.quantity_received, d.received_date, d.distribution_id, d.received_by
+from food_distribution d
+join seed_dispatches sd on sd.school_id = d.school_id and sd.food_id = d.food_id
+join inventory_items i on i.school_id = d.school_id and i.food_id = d.food_id;
+
+-- A second rice dispatch to Tumaini, still in transit.
+insert into food_distribution (school_id, food_id, quantity_dispatched, dispatch_date, dispatched_by)
+select s.school_id, f.food_id, 40, (now() at time zone 'Africa/Nairobi')::date,
+       (select user_id from seed_user)
+from schools s
+join food_items f on f.item_name = 'Rice'
+where s.name = 'Tumaini School'
+  and not exists (select 1 from food_distribution d
+                  where d.school_id = s.school_id and d.food_id = f.food_id
+                    and d.status = 'in_transit');
 
 -- ------------------------------------------------------------
 -- Last 7 days of attendance for the demo schools' active students:
@@ -146,23 +203,32 @@ where s.name in ('Tumaini School', 'Upendo School', 'Baraka School')
 on conflict do nothing;
 
 -- ------------------------------------------------------------
--- A 0.25 kg lunch portion of each school's staple for every
--- student who attended lunch. Each one deducts stock as usual.
+-- Food used at each of those meals: a fixed portion per student
+-- who attended, recorded as one total per meal and food. Each
+-- one deducts stock as usual.
 -- ------------------------------------------------------------
-insert into food_distribution (beneficiary_id, item_id, quantity_issued, distribution_date, recorded_by)
-select a.beneficiary_id, i.item_id, 0.25, a.attendance_date, (select user_id from seed_user)
+insert into food_consumption (item_id, meal_type, consumption_date, quantity, recorded_by)
+select i.item_id, a.meal_type, a.attendance_date, count(*) * p.portion, (select user_id from seed_user)
 from meal_attendance a
 join schools s on s.school_id = a.school_id
 join (values
-  ('Tumaini School', 'Rice'),
-  ('Upendo School',  'Maize flour'),
-  ('Baraka School',  'Rice')
-) as staple(school, item_name) on staple.school = s.name
-join inventory_items i on i.school_id = s.school_id and i.item_name = staple.item_name
-where a.meal_type = 'lunch'
-  and not exists (select 1 from food_distribution f
-                  where f.beneficiary_id = a.beneficiary_id
-                    and f.item_id = i.item_id
-                    and f.distribution_date = a.attendance_date);
+  ('Tumaini School', 'breakfast', 'Maize flour', 0.10),
+  ('Tumaini School', 'lunch',     'Rice',        0.25),
+  ('Tumaini School', 'lunch',     'Beans',       0.10),
+  ('Tumaini School', 'supper',    'Maize flour', 0.25),
+  ('Tumaini School', 'supper',    'Beans',       0.10),
+  ('Upendo School',  'lunch',     'Maize flour', 0.25),
+  ('Upendo School',  'lunch',     'Beans',       0.10),
+  ('Baraka School',  'breakfast', 'Rice',        0.10),
+  ('Baraka School',  'lunch',     'Rice',        0.25),
+  ('Baraka School',  'lunch',     'Beans',       0.05)
+) as p(school, meal_type, item_name, portion) on p.school = s.name and p.meal_type = a.meal_type
+join food_items f on f.item_name = p.item_name
+join inventory_items i on i.school_id = s.school_id and i.food_id = f.food_id
+where not exists (select 1 from food_consumption c
+                  where c.item_id = i.item_id
+                    and c.meal_type = a.meal_type
+                    and c.consumption_date = a.attendance_date)
+group by i.item_id, a.meal_type, a.attendance_date, p.portion;
 
 commit;

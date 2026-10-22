@@ -7,7 +7,7 @@
 //
 //   POST {SUPABASE_URL}/rest/v1/rpc/record_nfc_scan
 //   apikey: {anon key}
-//   { "p_nfc_tag_id": ..., "p_device_id": ..., "p_mode": ..., ... }
+//   { "p_nfc_tag_id": ..., "p_device_id": ..., "p_mode": "attendance" }
 //
 // and prints each result with its round-trip time, then a summary
 // (successes, errors by type, min/avg/p95/max latency).
@@ -16,8 +16,6 @@
 //   npm run simulate -- --device reader-tumaini-01 --tag A1000001
 //   npm run simulate -- --device reader-tumaini-01 --tag A1000001,A1000002,A1000003
 //   npm run simulate -- --device reader-baraka-01 --tag C3000001 --repeat 20 --interval 500
-//   npm run simulate -- --device reader-upendo-01 --tag B2000001 \
-//       --mode distribution --item <inventory item uuid> --quantity 0.25
 //
 // Every scan is real: it writes to the database the app uses, exactly
 // as a card tap on the reader would.
@@ -30,9 +28,8 @@ const HELP = `Usage: npm run simulate -- --device <device id> --tag <card id>[,<
 
   --device <id>       Registered reader ID, e.g. reader-tumaini-01 (required)
   --tag <ids>         Card ID(s) to tap, comma separated (required)
-  --mode <mode>       attendance (default) or distribution
-  --item <uuid>       Inventory item ID (required for distribution)
-  --quantity <n>      Quantity issued per tap (default 1)
+  --mode <mode>       attendance (default). Readers only record attendance;
+                      any other mode is refused, which tests that path.
   --repeat <n>        Tap the whole list of cards n times (default 1)
   --interval <ms>     Pause between taps in milliseconds (default 0)
   --json              Print one JSON line per tap instead of text
@@ -48,8 +45,6 @@ try {
       device: { type: 'string' },
       tag: { type: 'string' },
       mode: { type: 'string', default: 'attendance' },
-      item: { type: 'string' },
-      quantity: { type: 'string', default: '1' },
       repeat: { type: 'string', default: '1' },
       interval: { type: 'string', default: '0' },
       json: { type: 'boolean', default: false },
@@ -67,14 +62,13 @@ if (args.help) {
 if (!args.device || !args.tag) fail('--device and --tag are required.');
 
 const tags = args.tag.split(',').map((t) => t.trim()).filter(Boolean);
-const quantity = Number(args.quantity);
 const repeat = Number(args.repeat);
 const interval = Number(args.interval);
 if (!Number.isInteger(repeat) || repeat < 1) fail('--repeat must be a whole number of at least 1.');
 if (!Number.isFinite(interval) || interval < 0) fail('--interval must be 0 or more.');
-// Mode, item and quantity are not checked here on purpose: the database
-// validates them, and the simulator should be able to send bad input
-// the way a misconfigured reader could.
+// The mode is not checked here on purpose: the database validates it,
+// and the simulator should be able to send bad input the way a
+// misconfigured reader could.
 
 const { url, key } = loadConfig();
 const endpoint = `${url}/rest/v1/rpc/record_nfc_scan`;
@@ -98,9 +92,7 @@ async function scan(tag) {
     p_nfc_tag_id: tag,
     p_device_id: args.device,
     p_mode: args.mode,
-    p_quantity: quantity,
   };
-  if (args.item) body.p_item_id = args.item;
 
   const started = performance.now();
   let status = 0;
@@ -139,7 +131,7 @@ function report(r, n, total) {
   }
   const counter = `[${String(n).padStart(String(total).length)}/${total}]`;
   const outcome = r.success
-    ? `OK      ${r.name ?? ''} - ${args.mode === 'distribution' ? 'food issued' : 'attendance recorded'}`
+    ? `OK      ${r.name ?? ''} - attendance recorded`
     : `FAILED  ${r.error}${r.detail ? ` (${r.detail})` : ''}`;
   console.log(`${counter} ${r.tag.padEnd(10)} ${outcome.padEnd(48)} ${round1(r.ms)} ms`);
 }

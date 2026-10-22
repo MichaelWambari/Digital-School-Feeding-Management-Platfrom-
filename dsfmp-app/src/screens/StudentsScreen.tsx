@@ -39,9 +39,10 @@ const EMPTY_FORM: FormState = {
   status: 'active',
 };
 
-export default function BeneficiariesScreen({ navigation }: any) {
+export default function StudentsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school } = useSchool();
+  // Network admins can look at any school's students; the school's own staff manage them.
+  const { school, isNetworkAdmin } = useSchool();
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -130,7 +131,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
         return;
       }
       if (!data || data.length === 0) {
-        setFormError('You do not have permission to manage beneficiaries.');
+        setFormError('You do not have permission to manage students.');
         return;
       }
       setEditing(null);
@@ -150,7 +151,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
             <Text style={styles.back}>‹ Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {editing === 'new' ? 'Add beneficiary' : 'Edit beneficiary'}
+            {editing === 'new' ? 'Add student' : 'Edit student'}
           </Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -240,11 +241,19 @@ export default function BeneficiariesScreen({ navigation }: any) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Beneficiaries</Text>
-        <TouchableOpacity onPress={() => openForm('new')}>
-          <Text style={styles.add}>+ Add</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Students</Text>
+        {isNetworkAdmin ? (
+          <View style={styles.headerSpacer} />
+        ) : (
+          <TouchableOpacity onPress={() => openForm('new')}>
+            <Text style={styles.add}>+ Add</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {isNetworkAdmin && (
+        <Text style={styles.viewOnly}>View only. {school.name}'s staff manage its students.</Text>
+      )}
 
       <TextInput
         style={styles.input}
@@ -255,7 +264,7 @@ export default function BeneficiariesScreen({ navigation }: any) {
         autoCapitalize="none"
       />
 
-      {loadError && <Text style={styles.error}>Could not load beneficiaries: {loadError}</Text>}
+      {loadError && <Text style={styles.error}>Could not load students: {loadError}</Text>}
 
       <FlatList
         style={styles.list}
@@ -265,12 +274,16 @@ export default function BeneficiariesScreen({ navigation }: any) {
         ListEmptyComponent={
           loading ? null : (
             <Text style={styles.empty}>
-              {term ? 'No beneficiaries match your search.' : 'No beneficiaries yet.'}
+              {term ? 'No students match your search.' : 'No students yet.'}
             </Text>
           )
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => openForm(item)}>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => openForm(item)}
+            disabled={isNetworkAdmin}
+          >
             <View style={styles.rowMain}>
               <Text style={styles.rowName}>{item.full_name}</Text>
               <Text style={styles.rowMeta}>
@@ -292,11 +305,11 @@ export default function BeneficiariesScreen({ navigation }: any) {
 function describeError(error: { code?: string; message: string }) {
   if (error.code === '23505') {
     return error.message.includes('nfc_tag_id')
-      ? 'That NFC tag is already assigned to another beneficiary.'
+      ? 'That NFC tag is already assigned to another student.'
       : 'That admission number is already registered at this school.';
   }
   if (error.code === '42501') {
-    return 'You do not have permission to manage beneficiaries.';
+    return 'You do not have permission to manage students.';
   }
   return error.message;
 }
@@ -313,6 +326,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   headerSpacer: { width: 60 },
   back: { color: c.primary, fontSize: 15 },
   add: { color: c.primary, fontSize: 15, fontWeight: '600' },
+  viewOnly: { fontSize: 13, color: c.textMuted, marginBottom: 12 },
   label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
   input: {
     borderWidth: 1,

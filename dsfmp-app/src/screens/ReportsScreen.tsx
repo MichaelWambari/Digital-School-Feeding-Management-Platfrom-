@@ -38,9 +38,9 @@ type Item = {
 };
 
 type DayRow = { date: string; counts: Record<MealKey, number>; total: number };
-type ItemIssued = { item: Item; quantity: number; servings: number };
+type ItemUsed = { item: Item; quantity: number; meals: number };
 
-// Local calendar date as YYYY-MM-DD, matching how attendance and distribution dates are saved.
+// Local calendar date as YYYY-MM-DD, matching how attendance and food-used dates are saved.
 function localDate(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -99,7 +99,7 @@ export default function ReportsScreen({ navigation }: any) {
     lunch: 0,
     supper: 0,
   });
-  const [issued, setIssued] = useState<ItemIssued[]>([]);
+  const [used, setUsed] = useState<ItemUsed[]>([]);
   const [items, setItems] = useState<Item[]>([]);
 
   const rangeDays = RANGES.find((r) => r.key === range)!.days;
@@ -112,7 +112,7 @@ export default function ReportsScreen({ navigation }: any) {
     const end = dates[0];
 
     try {
-      const [beneficiaryResult, itemResult, attendance, distributions] = await Promise.all([
+      const [beneficiaryResult, itemResult, attendance, consumption] = await Promise.all([
         supabase
           .from('beneficiaries')
           .select('*', { count: 'exact', head: true })
@@ -120,9 +120,8 @@ export default function ReportsScreen({ navigation }: any) {
           .eq('status', 'active'),
         supabase
           .from('inventory_items')
-          .select('item_id, item_name, quantity_available, unit, reorder_level, school_id')
-          .in('school_id', schoolIds)
-          .order('item_name'),
+          .select('item_id, quantity_available, reorder_level, school_id, food_items(item_name, unit)')
+          .in('school_id', schoolIds),
         fetchAllRows<{ attendance_date: string; meal_type: string }>((from, to) =>
           supabase
             .from('meal_attendance')
@@ -133,14 +132,14 @@ export default function ReportsScreen({ navigation }: any) {
             .order('attendance_id')
             .range(from, to)
         ),
-        fetchAllRows<{ item_id: string; quantity_issued: number }>((from, to) =>
+        fetchAllRows<{ item_id: string; quantity: number }>((from, to) =>
           supabase
-            .from('food_distribution')
-            .select('item_id, quantity_issued')
+            .from('food_consumption')
+            .select('item_id, quantity')
             .in('school_id', schoolIds)
-            .gte('distribution_date', start)
-            .lte('distribution_date', end)
-            .order('distribution_id')
+            .gte('consumption_date', start)
+            .lte('consumption_date', end)
+            .order('consumption_id')
             .range(from, to)
         ),
       ]);
@@ -164,25 +163,25 @@ export default function ReportsScreen({ navigation }: any) {
         totals[meal] += 1;
       }
 
-      // Food issued per item over the range.
-      const loadedItems = itemResult.data ?? [];
-      const byItem = new Map<string, ItemIssued>(
-        loadedItems.map((item) => [item.item_id, { item, quantity: 0, servings: 0 }])
+      // Food used per item over the range. Each record is one food at one meal.
+      const loadedItems: Item[] = (itemResult.data ?? [])
+        .map(({ food_items, ...i }: any) => ({ ...i, item_name: food_items.item_name, unit: food_items.unit }))
+        .sort((a: Item, b: Item) => a.item_name.localeCompare(b.item_name));
+      const byItem = new Map<string, ItemUsed>(
+        loadedItems.map((item) => [item.item_id, { item, quantity: 0, meals: 0 }])
       );
-      for (const d of distributions) {
-        const entry = byItem.get(d.item_id);
+      for (const c of consumption) {
+        const entry = byItem.get(c.item_id);
         if (!entry) continue;
-        entry.quantity += Number(d.quantity_issued);
-        entry.servings += 1;
+        entry.quantity += Number(c.quantity);
+        entry.meals += 1;
       }
 
       setActiveCount(beneficiaryResult.count ?? 0);
       setItems(loadedItems);
       setDays([...byDay.values()]);
       setMealTotals(totals);
-      setIssued(
-        [...byItem.values()].filter((e) => e.servings > 0).sort((a, b) => b.servings - a.servings)
-      );
+      setUsed([...byItem.values()].filter((e) => e.meals > 0).sort((a, b) => b.meals - a.meals));
     } catch (e) {
       setError(`Could not load report: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -265,8 +264,8 @@ export default function ReportsScreen({ navigation }: any) {
         ))}
       </View>
       <Text style={styles.note}>
-        {totalAttendance.toLocaleString()} meals served · {activeCount} active beneficiaries. The
-        % is the share of active beneficiaries attending that meal each day, on average.
+        {totalAttendance.toLocaleString()} meals served · {activeCount} active students. The
+        % is the share of active students attending that meal each day, on average.
       </Text>
 
       {rangeDays > 1 && (
@@ -301,19 +300,19 @@ export default function ReportsScreen({ navigation }: any) {
         </View>
       )}
 
-      {/* ---------------- Distribution ---------------- */}
-      <Text style={styles.sectionTitle}>Food distributed</Text>
-      {issued.length === 0 ? (
-        <Text style={styles.empty}>No food distributed in this period.</Text>
+      {/* ---------------- Food used ---------------- */}
+      <Text style={styles.sectionTitle}>Food used</Text>
+      {used.length === 0 ? (
+        <Text style={styles.empty}>No food used in this period.</Text>
       ) : (
         <View style={styles.card}>
-          {issued.map((e) => (
+          {used.map((e) => (
             <View key={e.item.item_id} style={styles.row}>
               <View style={styles.rowMain}>
                 <Text style={styles.rowName}>{e.item.item_name}</Text>
                 <Text style={styles.rowMeta}>
                   {allSchools ? `${schoolName(e.item.school_id)} · ` : ''}
-                  {e.servings.toLocaleString()} {e.servings === 1 ? 'serving' : 'servings'}
+                  used at {e.meals.toLocaleString()} {e.meals === 1 ? 'meal' : 'meals'}
                 </Text>
               </View>
               <Text style={styles.rowValue}>{formatQty(e.quantity, e.item.unit)}</Text>

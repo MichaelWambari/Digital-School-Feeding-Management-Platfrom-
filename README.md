@@ -1,27 +1,35 @@
 # DSFMP — Digital School Feeding Management Platform
 
 A mobile app for running a school feeding programme: registering
-beneficiaries, recording meal attendance (by hand or with NFC cards),
-tracking food stock, issuing food, and reporting on all of it.
+students, recording meal attendance (by hand or with NFC cards), moving
+food from a central store to schools, recording the food each meal uses,
+and reporting on all of it.
 
 Built with **React Native (Expo)** and **Supabase** (PostgreSQL, Auth,
 row-level security). Runs on Android, iOS and the web.
 
 ## Features
 
-DSFMP serves a **network of schools**. Each school's students, readers, food
-stock and records are kept separate, and staff only see their own school.
+DSFMP serves a **network of schools**, supplied with food from a **central
+store** run by the network admin. Each school's students, readers, food stock
+and records are kept separate, and school staff only see their own school.
+
+Food moves like this:
+
+```
+supplier ──delivery──► central store ──dispatch──► school store ──food used──► breakfast / lunch / supper
+```
 
 | Module | What it does |
 |---|---|
 | **Login** | Email/password sign-in with Supabase Auth. Sessions persist across app restarts. |
-| **Dashboard** | The school's name, active beneficiary count and navigation to each module, plus a light/dark/system theme switch. Network admins choose which school to work on. |
-| **Beneficiaries** | Searchable list of the school's learners with an add/edit form. |
-| **Attendance** | Choose breakfast, lunch or supper and mark each active beneficiary present for today. Tap again to undo. Shows a present/total count and includes NFC scans. |
-| **Inventory** | The school's stock list with low-stock warnings. Add or edit items and record deliveries (*received*) or usage (*used*). A database trigger keeps stock levels correct and blocks using more than is in stock. |
-| **Distribution** | Pick a food item and portion size, then issue it to beneficiaries. Each issue deducts stock and is blocked if stock is short. |
-| **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food distributed per item, and current stock with low-stock items flagged. Network admins can switch between one school and all schools. |
-| **NFC scanning** | Card readers (e.g. an ESP32) call one database function, `record_nfc_scan()`, to record attendance or a distribution. Each reader belongs to a school and only accepts that school's cards. Every scan is logged for audit. |
+| **Dashboard** | The school's name, active student count and navigation to each module, plus a light/dark/system theme switch. Network admins choose which school to view. |
+| **Students** | Searchable list of the school's students with an add/edit form. View only for network admins. |
+| **Attendance** | Choose breakfast, lunch or supper and mark each active student present for today. Tap again to undo. Shows a present/total count and includes NFC scans. View only for network admins. |
+| **Inventory** | *Network admin:* the central store. Keep the network's food list, record deliveries from suppliers and write-offs, with low-stock warnings. *School staff:* the school's stock, with low-stock warnings, a per-food reorder level and the history of food received and used. A database trigger keeps every stock level correct and blocks using more than is in stock. |
+| **Distribution** | *Network admin:* dispatch food from the central store to a school (cancel it while it's still in transit), and see for every school how much of each food was sent, how much was used and how much is in stock. *School staff:* confirm deliveries from the central store with the amount that actually arrived (any shortfall is recorded), and after each meal record how much of each food was used. The app shows the portion per student from that meal's attendance. |
+| **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food used per item, and current stock with low-stock items flagged. Network admins can switch between one school and all schools. |
+| **NFC scanning** | Card readers (e.g. an ESP32) call one database function, `record_nfc_scan()`, to record a student's attendance at the current meal. Each reader belongs to a school and only accepts that school's cards. Every scan is logged for audit. |
 
 ### Roles
 
@@ -29,13 +37,13 @@ Every user has one role, and the database enforces it with row-level security:
 
 | Role | School | Can do |
 |---|---|---|
-| `network_admin` | All schools | Everything, at every school |
+| `network_admin` | All schools | Run the central store and the food list, dispatch food to schools, manage schools and NFC readers, and view every school's records. Can't change a school's students, attendance, stock or food used. |
 | `admin` | One school | Everything at their school, including managing NFC devices, meal times and reading the NFC audit log |
-| `coordinator` | One school | Manage beneficiaries, record attendance, issue food, manage reports |
-| `inventory_officer` | One school | Manage inventory items and record stock movements |
+| `coordinator` | One school | Manage students, record attendance and food used, manage reports |
+| `inventory_officer` | One school | Confirm deliveries, record food used and set reorder levels |
 
-All staff can view their own school's beneficiaries, attendance, inventory,
-distributions and reports.
+All staff can view their own school's students, attendance, stock, deliveries,
+food used and reports.
 
 ### Meal serving windows
 
@@ -67,8 +75,10 @@ dsfmp-app/                  The Expo app (run all commands from here)
     lib/supabase.ts         Supabase client (project URL + anon key)
     navigation/             Auth-based routing (logged out → Login)
     school/SchoolContext.tsx  Signed-in user's profile and current school; use useSchool()
-    screens/                One file per module (Login, Dashboard, Beneficiaries,
-                            Attendance, Inventory, Distribution, Reports)
+    screens/                One file per module (Login, Dashboard, Students,
+                            Attendance, Inventory, Distribution, Reports); the
+                            network admin's Inventory and Distribution are
+                            CentralStoreScreen and NetworkDistributionScreen
     theme/ThemeContext.tsx  Light/dark/system colours; use makeStyles + useThemedStyles
   supabase/
     schema.sql              Full database: tables, RLS policies, triggers, functions
@@ -87,18 +97,26 @@ dsfmp-app/                  The Expo app (run all commands from here)
 |---|---|
 | `schools` | Schools in the network, with each school's timezone and meal serving windows |
 | `users` | Profile, role and school for each Supabase Auth user, created automatically on sign-up |
-| `beneficiaries` | Learners at each school, with their NFC tag IDs |
+| `beneficiaries` | Students at each school, with their NFC tag IDs |
 | `nfc_devices` | Registered card readers, each at one school |
-| `inventory_items` | Each school's food items and current stock levels |
-| `inventory_transactions` | Stock received or used. A trigger updates `inventory_items`. |
-| `meal_attendance` | One row per beneficiary, meal and day |
-| `food_distribution` | Food issued to beneficiaries. Stock is deducted automatically. |
+| `food_items` | The network's food list (name, unit) and the central store's stock of each food |
+| `central_transactions` | Central store movements: deliveries, write-offs, dispatches and cancelled dispatches. A trigger updates `food_items`. |
+| `food_distribution` | Dispatches from the central store to a school: in transit, received (with the amount that arrived) or cancelled |
+| `inventory_items` | Each school's stock of each food it has received |
+| `food_consumption` | Food a school used at one meal on one day |
+| `inventory_transactions` | School stock received from the central store or used at meals. A trigger updates `inventory_items`. |
+| `meal_attendance` | One row per student, meal and day |
 | `reports` | Saved reports (export is planned) |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |
 
-Every table except `schools` has a `school_id`. Attendance, distributions and
-stock movements take theirs automatically from the beneficiary or item, so a
-record can't end up filed under the wrong school. `nfc_tag_logs` deliberately
+Every school record has a `school_id`. Attendance, food used and stock
+movements take theirs automatically from the student or item, so a record
+can't end up filed under the wrong school. Stock never changes directly:
+dispatching (`food_distribution`), confirming a delivery
+(`receive_distribution()`), cancelling one (`cancel_distribution()`) and
+recording food used each add a transaction, and triggers keep the stock
+levels in step. In the database, students are still called
+`beneficiaries`. `nfc_tag_logs` deliberately
 has no foreign keys on the card and reader, so scans from unknown cards or
 unregistered readers are still recorded.
 
@@ -125,10 +143,11 @@ unregistered readers are still recorded.
 
 3. Optional: run `dsfmp-app/supabase/seed/demo_data.sql` to load demo data.
    It adds three more schools (Tumaini, Upendo and Baraka), each with
-   test students and NFC card IDs, a registered reader, food stock, and a week
-   of past attendance and lunch distributions, plus a reader for Jasiri
-   School. It only adds missing rows, so it's safe to run again or on a live
-   database.
+   test students and NFC card IDs, a registered reader, food received from
+   the central store, and a week of past attendance and food used at meals,
+   plus a reader for Jasiri School. It also stocks the central store and
+   leaves one rice delivery to Tumaini in transit, ready to confirm. It only
+   adds missing rows, so it's safe to run again or on a live database.
 
 ### 2. Install and run
 
@@ -164,8 +183,9 @@ schools as rows in the `schools` table.
   policies, not in the app.
 - Every screen works on one school: get it with `useSchool()` and filter
   queries with `.eq('school_id', school.school_id)`. Send `school_id` when
-  creating beneficiaries and inventory items; other tables fill it in
-  automatically.
+  creating students and dispatches; other tables fill it in automatically.
+  Inventory and Distribution show a different screen to network admins
+  (`useSchool().isNetworkAdmin`).
 - Style screens with `makeStyles(c: Colors)` and `useThemedStyles` from
   `src/theme/ThemeContext.tsx` instead of hard-coding colours.
 - Database changes must go in both places: edit `schema.sql`, and add a new
@@ -186,13 +206,12 @@ demo seed:
 npm run simulate -- --device reader-tumaini-01 --tag A1000001
 npm run simulate -- --device reader-tumaini-01 --tag A1000001,A1000002,A1000003
 npm run simulate -- --device reader-baraka-01 --tag C3000001 --repeat 20 --interval 500
-npm run simulate -- --device reader-upendo-01 --tag B2000001 --mode distribution --item <item_id> --quantity 0.25
 npm run simulate -- --help
 ```
 
-Attendance taps only succeed inside the school's meal windows; outside them
-the result is `outside_meal_time`. The item ID for distribution is the
-`item_id` in the `inventory_items` table. Add `--json` to get one JSON line
+Taps only succeed inside the school's meal windows; outside them the result
+is `outside_meal_time`. Readers record attendance only; food used is recorded
+per meal in the app. Add `--json` to get one JSON line
 per tap for test records. Taps are real: they write to the database the app
 uses, and every tap, including failed ones, is logged in `nfc_tag_logs`.
 

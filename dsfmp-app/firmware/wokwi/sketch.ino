@@ -32,12 +32,6 @@ const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 // reader-jasiri-01, reader-tumaini-01, reader-upendo-01 and reader-baraka-01.
 const char *DEVICE_ID = "reader-tumaini-01";
 
-// "attendance", or "distribution" with ITEM_ID set to an inventory_items.item_id
-// from the reader's school and QUANTITY to the amount issued per tap.
-const char *MODE = "attendance";
-const char *ITEM_ID = "";
-const float QUANTITY = 1;
-
 // Demo cards, one per button (card IDs from the demo seed; the last is unknown).
 const int BUTTON_PINS[] = {13, 14, 27};
 const char *BUTTON_CARDS[] = {"A1000001", "A1000002", "FFFFFFFF"};
@@ -67,7 +61,7 @@ void setup() {
 
   connectWifi();
   Serial.println();
-  Serial.printf("Reader %s ready, mode %s.\n", DEVICE_ID, MODE);
+  Serial.printf("Reader %s ready.\n", DEVICE_ID);
   Serial.println("Press a card button, or type a card ID and press Enter.");
   showIdle();
 }
@@ -121,7 +115,7 @@ void handleTap(const String &card) {
 
   if (ok) {
     Serial.printf("OK: %s (%lu ms)\n", firstName.c_str(), elapsed);
-    showMessage(strcmp(MODE, "distribution") == 0 ? "Food issued" : "Welcome", firstName);
+    showMessage("Welcome", firstName);
     feedback(true);
   } else {
     Serial.printf("FAILED: %s (%lu ms)\n", error.c_str(), elapsed);
@@ -148,9 +142,7 @@ bool recordScan(const String &card, String &firstName, String &error) {
   JsonDocument body;
   body["p_nfc_tag_id"] = card;
   body["p_device_id"] = DEVICE_ID;
-  body["p_mode"] = MODE;
-  body["p_quantity"] = QUANTITY;
-  if (strlen(ITEM_ID) > 0) body["p_item_id"] = ITEM_ID;
+  body["p_mode"] = "attendance";
   String payload;
   serializeJson(body, payload);
 
@@ -188,8 +180,6 @@ String describeError(const String &error) {
   if (error == "wrong_school") return "Wrong school";
   if (error == "unregistered_or_inactive_device") return "Reader not reg.";
   if (error == "inactive_school") return "School inactive";
-  if (error == "insufficient_stock") return "Out of stock";
-  if (error == "invalid_distribution") return "Check item ID";
   if (error == "network_error") return "No connection";
   return error.substring(0, 16);
 }

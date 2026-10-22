@@ -6,8 +6,9 @@
 -- ============================================================
 with
 expected_tables(t) as (
-  values ('schools'), ('users'), ('beneficiaries'), ('nfc_devices'), ('inventory_items'),
-         ('inventory_transactions'), ('meal_attendance'), ('food_distribution'),
+  values ('schools'), ('users'), ('beneficiaries'), ('nfc_devices'), ('food_items'),
+         ('central_transactions'), ('food_distribution'), ('inventory_items'),
+         ('food_consumption'), ('inventory_transactions'), ('meal_attendance'),
          ('reports'), ('nfc_tag_logs')
 ),
 tbl as (
@@ -19,9 +20,11 @@ tbl as (
 expected_triggers(tg, on_table) as (
   values ('on_auth_user_created', 'auth.users'),
          ('on_inventory_transaction_insert', 'public.inventory_transactions'),
+         ('on_central_transaction_insert', 'public.central_transactions'),
          ('on_food_distribution_insert', 'public.food_distribution'),
+         ('on_food_consumption_insert', 'public.food_consumption'),
          ('set_meal_attendance_school', 'public.meal_attendance'),
-         ('set_food_distribution_school', 'public.food_distribution'),
+         ('set_food_consumption_school', 'public.food_consumption'),
          ('set_inventory_transaction_school', 'public.inventory_transactions')
 ),
 fn as (
@@ -29,19 +32,23 @@ fn as (
   from pg_proc p where p.pronamespace = 'public'::regnamespace
 ),
 stock as (
-  select i.item_id, i.item_name, i.quantity_available, i.reorder_level,
+  select i.item_id, s.name || ': ' || f.item_name as item_name, i.quantity_available, i.reorder_level,
          coalesce(sum(t.quantity) filter (where t.transaction_type = 'received'), 0)
        - coalesce(sum(t.quantity) filter (where t.transaction_type = 'used'), 0) as from_history
   from inventory_items i
+  join schools s on s.school_id = i.school_id
+  join food_items f on f.food_id = i.food_id
   left join inventory_transactions t on t.item_id = i.item_id
-  group by i.item_id
+  group by i.item_id, s.name, f.item_name
 ),
-dist_vs_used as (
-  select i.item_name,
-         coalesce((select sum(quantity_issued) from food_distribution d where d.item_id = i.item_id), 0) as issued,
-         coalesce((select sum(quantity) from inventory_transactions t
-                   where t.item_id = i.item_id and t.transaction_type = 'used'), 0) as used
-  from inventory_items i
+central_stock as (
+  select f.food_id, f.item_name, f.quantity_available, f.reorder_level,
+         coalesce(sum(t.quantity) filter (where t.transaction_type in ('received', 'returned')), 0)
+       - coalesce(sum(t.quantity) filter (where t.transaction_type in ('written_off', 'dispatched')), 0)
+           as from_history
+  from food_items f
+  left join central_transactions t on t.food_id = f.food_id
+  group by f.food_id
 )
 
 -- ---------- STRUCTURE ----------
@@ -63,13 +70,15 @@ union all
 select 4, 'Structure', 'Function ' || f || ' exists',
        case when exists (select 1 from fn where proname = f) then 'OK' else 'FAIL' end, ''
 from unnest(array['handle_new_user', 'is_network_admin', 'can_view_school', 'has_school_role',
-                  'record_nfc_scan', 'apply_inventory_transaction', 'log_distribution_as_transaction',
-                  'set_school_from_beneficiary', 'set_school_from_item', 'set_distribution_school']) f
+                  'record_nfc_scan', 'apply_inventory_transaction', 'apply_central_transaction',
+                  'log_dispatch_as_central_transaction', 'log_consumption_as_transaction',
+                  'receive_distribution', 'cancel_distribution',
+                  'set_school_from_beneficiary', 'set_school_from_item']) f
 union all
-select 5, 'Structure', 'Fix 001: distribution trigger pins search_path',
-       case when exists (select 1 from fn where proname = 'log_distribution_as_transaction'
-                         and array_to_string(proconfig, ',') like '%search_path%') then 'OK' else 'FAIL' end,
-       'run supabase/fixes/001 if FAIL'
+select 5, 'Structure', 'Security definer functions pin search_path',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       coalesce(string_agg(proname, ', '), '')
+from fn where prosecdef and coalesce(array_to_string(proconfig, ','), '') not like '%search_path%'
 union all
 select 6, 'Structure', 'Fix 002: NFC scans are filed by meal serving window',
        case when exists (select 1 from fn where proname = 'record_nfc_scan'
@@ -84,6 +93,10 @@ select 8, 'Structure', 'Fix 003: NFC scans use the reader''s school',
        case when exists (select 1 from fn where proname = 'record_nfc_scan'
                          and prosrc like '%wrong_school%') then 'OK' else 'FAIL' end,
        'run supabase/fixes/003 if FAIL'
+union all
+select 9, 'Structure', 'Fix 004: central store and food used per meal',
+       case when to_regclass('public.food_consumption') is not null then 'OK' else 'FAIL' end,
+       'run supabase/fixes/004 if FAIL'
 
 -- ---------- SCHOOLS ----------
 union all
@@ -102,13 +115,10 @@ select 17, 'Schools', 'Attendance filed under the student''s school',
        count(*) || ' attendance records with a different school than their student'
 from meal_attendance a join beneficiaries b using (beneficiary_id) where a.school_id <> b.school_id
 union all
-select 18, 'Schools', 'Distributions use food from the student''s school',
+select 18, 'Schools', 'Food used filed under the item''s school',
        case when count(*) = 0 then 'OK' else 'FAIL' end,
-       count(*) || ' distributions where the item, student or record school differ'
-from food_distribution d
-join beneficiaries b using (beneficiary_id)
-join inventory_items i using (item_id)
-where d.school_id <> b.school_id or i.school_id <> b.school_id
+       count(*) || ' food-used records with a different school than their item'
+from food_consumption c join inventory_items i using (item_id) where c.school_id <> i.school_id
 union all
 select 19, 'Schools', 'Stock movements filed under the item''s school',
        case when count(*) = 0 then 'OK' else 'FAIL' end,
@@ -140,27 +150,27 @@ select 13, 'Accounts', 'Profiles still named "New User"',
        count(*) || ' users with the default name; set full_name so records are traceable'
 from public.users where full_name = 'New User'
 
--- ---------- BENEFICIARIES ----------
+-- ---------- STUDENTS ----------
 union all
-select 20, 'Beneficiaries', 'Beneficiaries', 'INFO',
+select 20, 'Students', 'Students', 'INFO',
        count(*) || ' total, ' || count(*) filter (where status = 'active') || ' active, '
        || count(*) filter (where status = 'inactive') || ' inactive'
 from beneficiaries
 union all
-select 21, 'Beneficiaries', 'Active beneficiaries with an NFC card',
+select 21, 'Students', 'Active students with an NFC card',
        case when count(*) filter (where nfc_tag_id is null) = 0 then 'OK' else 'WARN' end,
        count(*) filter (where nfc_tag_id is null) || ' of ' || count(*)
-       || ' active beneficiaries have no card (manual attendance only)'
+       || ' active students have no card (manual attendance only)'
 from beneficiaries where status = 'active'
 union all
-select 22, 'Beneficiaries', 'Ages look plausible (3-25)',
+select 22, 'Students', 'Ages look plausible (3-25)',
        case when count(*) = 0 then 'OK' else 'WARN' end,
-       count(*) || ' beneficiaries with a missing or unusual age'
+       count(*) || ' students with a missing or unusual age'
 from beneficiaries where age is null or age not between 3 and 25
 union all
-select 23, 'Beneficiaries', 'Blank card IDs stored as text',
+select 23, 'Students', 'Blank card IDs stored as text',
        case when count(*) = 0 then 'OK' else 'WARN' end,
-       count(*) || ' beneficiaries with an empty-string nfc_tag_id (should be null)'
+       count(*) || ' students with an empty-string nfc_tag_id (should be null)'
 from beneficiaries where trim(nfc_tag_id) = ''
 
 -- ---------- DEVICES & NFC ----------
@@ -200,7 +210,7 @@ from meal_attendance where attendance_date > (now() at time zone 'Africa/Nairobi
 union all
 select 43, 'Attendance', 'NFC tag on record matches the student''s card',
        case when count(*) = 0 then 'OK' else 'WARN' end,
-       count(*) || ' records whose nfc_tag_id differs from the beneficiary''s current card'
+       count(*) || ' records whose nfc_tag_id differs from the student''s current card'
 from meal_attendance a join beneficiaries b using (beneficiary_id)
 where a.nfc_tag_id is not null and a.nfc_tag_id is distinct from b.nfc_tag_id
 union all
@@ -225,10 +235,22 @@ select 51, 'Inventory', 'No negative stock',
        case when count(*) = 0 then 'OK' else 'FAIL' end, count(*) || ' items below zero'
 from inventory_items where quantity_available < 0
 union all
-select 52, 'Inventory', 'Every distribution deducted stock: ' || item_name,
-       case when used >= issued then 'OK' else 'FAIL' end,
-       'issued ' || issued || ', recorded as used ' || used
-from dist_vs_used where issued > 0
+select 52, 'Inventory', 'Food used at meals deducted stock',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       count(*) || ' food-used records with no matching stock movement (records converted by fix 004 are exempt)'
+from food_consumption c
+where not exists (select 1 from inventory_transactions t where t.consumption_id = c.consumption_id)
+  and c.created_at >= coalesce((select min(created_at) from inventory_transactions
+                                where consumption_id is not null), now())
+union all
+select 55, 'Inventory', 'Central store matches its history: ' || item_name,
+       case when quantity_available = from_history then 'OK' else 'FAIL' end,
+       'stored ' || quantity_available || ', history says ' || from_history
+from central_stock
+union all
+select 56, 'Inventory', 'Central store low on stock', case when count(*) = 0 then 'OK' else 'WARN' end,
+       coalesce(string_agg(item_name || ' (' || quantity_available || ')', ', '), 'none')
+from central_stock where quantity_available <= reorder_level and reorder_level > 0
 union all
 select 53, 'Inventory', 'Low-stock items', case when count(*) = 0 then 'OK' else 'WARN' end,
        coalesce(string_agg(item_name || ' (' || quantity_available || ')', ', '), 'none')
@@ -236,19 +258,33 @@ from stock where quantity_available <= coalesce(reorder_level, 0) and coalesce(r
 union all
 select 54, 'Inventory', 'Stock movements say who recorded them',
        case when count(*) = 0 then 'OK' else 'WARN' end,
-       count(*) || ' transactions with no recorded_by (NFC distributions are expected here)'
+       count(*) || ' transactions with no recorded_by'
 from inventory_transactions where recorded_by is null
 
 -- ---------- DISTRIBUTION & REPORTS ----------
 union all
-select 60, 'Distribution', 'Food distributions', 'INFO',
-       count(*) || ' total, ' || count(*) filter (where device_id is not null) || ' from NFC'
+select 60, 'Distribution', 'Dispatches to schools', 'INFO',
+       count(*) || ' total, ' || count(*) filter (where status = 'in_transit') || ' in transit, '
+       || count(*) filter (where status = 'cancelled') || ' cancelled'
 from food_distribution
 union all
-select 61, 'Distribution', 'Food issued to inactive students',
-       case when count(*) = 0 then 'OK' else 'INFO' end,
-       count(*) || ' distributions to students now marked inactive'
-from food_distribution d join beneficiaries b using (beneficiary_id) where b.status = 'inactive'
+select 61, 'Distribution', 'Deliveries arrived in full',
+       case when count(*) = 0 then 'OK' else 'WARN' end,
+       count(*) || ' deliveries received short, '
+       || coalesce(sum(quantity_dispatched - quantity_received), 0) || ' units missing in all'
+from food_distribution where status = 'received' and quantity_received < quantity_dispatched
+union all
+select 63, 'Distribution', 'Deliveries in transit for over a week',
+       case when count(*) = 0 then 'OK' else 'WARN' end,
+       count(*) || ' dispatches not yet confirmed by the school'
+from food_distribution where status = 'in_transit' and dispatch_date < current_date - 7
+union all
+select 64, 'Distribution', 'Every received delivery added stock',
+       case when count(*) = 0 then 'OK' else 'FAIL' end,
+       count(*) || ' received deliveries with no stock movement'
+from food_distribution d
+where d.status = 'received' and d.quantity_received > 0
+  and not exists (select 1 from inventory_transactions t where t.distribution_id = d.distribution_id)
 union all
 select 62, 'Reports', 'Saved reports', 'INFO', count(*) || ' rows (export not built yet, #1)'
 from reports

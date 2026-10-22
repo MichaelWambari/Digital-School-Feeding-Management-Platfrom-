@@ -5,7 +5,7 @@ import { Colors, ThemePreference, useTheme, useThemedStyles } from '../theme/The
 import { ROLE_LABELS, useSchool } from '../school/SchoolContext';
 
 const MENU_ITEMS = [
-  { label: 'Beneficiaries', screen: 'Beneficiaries', available: true },
+  { label: 'Students', screen: 'Students', available: true },
   { label: 'Attendance', screen: 'Attendance', available: true },
   { label: 'Inventory', screen: 'Inventory', available: true },
   { label: 'Distribution', screen: 'Distribution', available: true },
@@ -86,7 +86,7 @@ export default function DashboardScreen({ navigation }: any) {
 
       <View style={styles.statCard}>
         <Text style={styles.statNumber}>{beneficiaryCount ?? '—'}</Text>
-        <Text style={styles.statLabel}>Active beneficiaries</Text>
+        <Text style={styles.statLabel}>Active students</Text>
       </View>
 
       <View style={styles.menu}>
