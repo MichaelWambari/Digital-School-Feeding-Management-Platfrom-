@@ -76,6 +76,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
     seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
   scripts/simulate-reader.mjs  NFC reader simulator (npm run simulate)
+  firmware/wokwi/           ESP32 reader firmware, runnable in the Wokwi simulator
 ```
 
 ## Database
