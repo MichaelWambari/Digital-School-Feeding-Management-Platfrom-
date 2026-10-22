@@ -75,6 +75,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
     fixes/NNN_*.sql         Migrations for an existing database, run in number order
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
     seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
+  scripts/simulate-reader.mjs  NFC reader simulator (npm run simulate)
 ```
 
 ## Database
@@ -170,6 +171,29 @@ schools as rows in the `schools` table.
   `supabase/fixes/NNN_description.sql` that is safe to run on live data.
 - Add native libraries with `npx expo install <package>` so their versions
   match the Expo SDK.
+
+## NFC reader simulator
+
+Until the ESP32 reader arrives, `scripts/simulate-reader.mjs` stands in for
+it. Each tap sends the same request the firmware will send
+(`POST /rest/v1/rpc/record_nfc_scan` with the anon key), then prints the
+result and round-trip time, followed by a summary with min/avg/p95/max
+latency. Run it from `dsfmp-app/`, using the readers and card IDs from the
+demo seed:
+
+```bash
+npm run simulate -- --device reader-tumaini-01 --tag A1000001
+npm run simulate -- --device reader-tumaini-01 --tag A1000001,A1000002,A1000003
+npm run simulate -- --device reader-baraka-01 --tag C3000001 --repeat 20 --interval 500
+npm run simulate -- --device reader-upendo-01 --tag B2000001 --mode distribution --item <item_id> --quantity 0.25
+npm run simulate -- --help
+```
+
+Attendance taps only succeed inside the school's meal windows; outside them
+the result is `outside_meal_time`. The item ID for distribution is the
+`item_id` in the `inventory_items` table. Add `--json` to get one JSON line
+per tap for test records. Taps are real: they write to the database the app
+uses, and every tap, including failed ones, is logged in `nfc_tag_logs`.
 
 ## Building for release
 
