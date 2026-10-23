@@ -1,4 +1,5 @@
 import 'react-native-url-polyfill/auto';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
@@ -11,6 +12,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    // Google sign-in returns a one-time code (PKCE). On the web the page
+    // itself is redirected back, so the client reads the code from the URL;
+    // on phones LoginScreen exchanges it.
+    flowType: 'pkce',
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });

@@ -50,6 +50,9 @@ Deno.serve(async (req) => {
     if (caller?.role !== 'network_admin' || caller.status !== 'active') {
       return reply(403, { error: 'Only network admins can manage staff.' });
     }
+    if (!(await sessionVerified(token, auth.user.id))) {
+      return reply(403, { error: 'Finish signing in with your emailed code, then try again.' });
+    }
 
     const body = await req.json().catch(() => ({}));
     if (body.action === 'create') return await createStaff(body);
@@ -116,6 +119,29 @@ async function setPassword(body: Record<string, unknown>) {
   const { error } = await admin.auth.admin.updateUserById(userId, { password });
   if (error) return reply(400, { error: error.message });
   return reply(200, { user_id: userId });
+}
+
+// The same rule as the database's session_verified(): a Google login, or
+// a password login whose emailed code was entered (fix 006).
+async function sessionVerified(token: string, userId: string) {
+  const claims = readClaims(token);
+  const amr = Array.isArray(claims.amr) ? claims.amr : [];
+  if (amr.some((m: { method?: string }) => m?.method === 'oauth')) return true;
+  const { data, error } = await admin
+    .from('login_codes')
+    .select('verified_at')
+    .eq('session_id', String(claims.session_id ?? ''))
+    .eq('user_id', userId)
+    .maybeSingle();
+  // Before fix 006 there is no login_codes table and no second step.
+  if (error) return error.code === 'PGRST205' || error.code === '42P01';
+  return Boolean(data?.verified_at);
+}
+
+function readClaims(token: string): Record<string, unknown> {
+  const payload = token.split('.')[1] ?? '';
+  const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+  return JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
 }
 
 function reply(status: number, body: unknown) {

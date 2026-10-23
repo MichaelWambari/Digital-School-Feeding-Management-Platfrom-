@@ -22,7 +22,7 @@ supplier ──delivery──► central store ──dispatch──► school st
 
 | Module | What it does |
 |---|---|
-| **Login** | Email/password sign-in with Supabase Auth. Sessions persist across app restarts. |
+| **Login** | Sign in with email and password, then a 6-digit code emailed to you, or with **Continue with Google**. Only staff added in Staff can sign in. Sessions persist across app restarts. |
 | **Dashboard** | The school's name, active student count and navigation to each module, plus a light/dark/system theme switch. Network admins choose which school to view. |
 | **Students** | Searchable list of the school's students with an add/edit form. View only for network admins. |
 | **Attendance** | Choose breakfast, lunch or supper and mark each active student present for today. Tap again to undo. Shows a present/total count and includes NFC scans. View only for network admins. |
@@ -87,6 +87,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
     seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
     functions/manage-staff/ Edge Function that creates staff logins and resets passwords
+    functions/login-code/   Edge Function that emails and checks sign-in codes
   scripts/simulate-reader.mjs  NFC reader simulator (npm run simulate)
   firmware/wokwi/           ESP32 reader firmware, runnable in the Wokwi simulator
 ```
@@ -117,7 +118,9 @@ can't end up filed under the wrong school. Stock never changes directly:
 dispatching (`food_distribution`), confirming a delivery
 (`receive_distribution()`), cancelling one (`cancel_distribution()`) and
 recording food used each add a transaction, and triggers keep the stock
-levels in step. Staff are listed and edited with `list_staff()` and
+levels in step. Every permission rule also requires `session_verified()`:
+a password login can't see or change anything until its emailed code is
+entered (`login_codes`), while Google logins need no code. Staff are listed and edited with `list_staff()` and
 `update_staff()` (network admins only). In the database, students are still called
 `beneficiaries`. `nfc_tag_logs` deliberately
 has no foreign keys on the card and reader, so scans from unknown cards or
@@ -203,6 +206,54 @@ suspend them (they can still sign in but see nothing) or set a new password.
 Without the Edge Function you can still add users by hand: create them as
 in step 3, then set their `role` and `school_id` in the `users` table. Until
 a user has a school, the app shows them a "not assigned to a school" message.
+
+### 5. Sign-in codes
+
+After a password sign-in, the app emails a 6-digit code that must be entered
+before that login can see anything. The database enforces this. Codes are
+sent by the `login-code` Edge Function through [Brevo](https://www.brevo.com)
+(free for 300 emails a day).
+
+Set it up **before** running `supabase/fixes/006_login_codes.sql`. Otherwise
+password sign-ins can't get a code and only Google sign-ins will work.
+
+1. Create a free Brevo account. Under **Senders, Domains & Dedicated IPs →
+   Senders**, add the address codes should come from (your Gmail works) and
+   confirm it from the email Brevo sends.
+2. Under **SMTP & API → API Keys**, generate an API key.
+3. In Supabase, open **Edge Functions → Secrets** and add `BREVO_API_KEY` (the
+   key) and `LOGIN_CODE_FROM` (the sender address).
+4. Deploy `dsfmp-app/supabase/functions/login-code/index.ts` as a function
+   named `login-code`, the same way as `manage-staff`, and turn off
+   **Verify JWT** for it. Redeploy `manage-staff` too, since it now also
+   checks for a finished sign-in.
+5. Run `supabase/fixes/006_login_codes.sql` in the SQL Editor.
+
+If codes don't arrive, the code screen shows Brevo's error. A common one is
+an unrecognised IP address: turn off **Security → Authorised IPs** in Brevo,
+because Supabase's servers don't have fixed addresses.
+
+### 6. Google sign-in
+
+Staff can tap **Continue with Google** instead of using a password and code.
+Google matches them to their account by email, so their Google email must be
+the one added in Staff.
+
+1. In the [Google Cloud console](https://console.cloud.google.com), create a
+   project and set up the **OAuth consent screen** (External, app name
+   DSFMP). While it is in testing, add each staff member's Gmail address as a
+   test user, or publish the app.
+2. Under **Credentials → Create credentials → OAuth client ID**, choose **Web
+   application** and add this authorised redirect URI:
+   `https://<your-project>.supabase.co/auth/v1/callback`.
+3. In Supabase, open **Authentication → Sign In / Providers → Google**, turn it
+   on, and paste the client ID and secret.
+4. Under **Authentication → URL Configuration → Redirect URLs**, add
+   `http://localhost:8081`, `exp://**` (Expo Go) and `dsfmp://**` (app builds),
+   plus the web address once the app is hosted.
+5. Under **Authentication → Sign In / Providers**, turn off **Allow new users
+   to sign up**. Only people already added in Staff can then sign in. Staff
+   created in the app are not affected.
 
 ## Development notes
 

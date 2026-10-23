@@ -9,7 +9,7 @@ expected_tables(t) as (
   values ('schools'), ('users'), ('beneficiaries'), ('nfc_devices'), ('food_items'),
          ('central_transactions'), ('food_distribution'), ('inventory_items'),
          ('food_consumption'), ('inventory_transactions'), ('meal_attendance'),
-         ('reports'), ('nfc_tag_logs')
+         ('reports'), ('nfc_tag_logs'), ('login_codes')
 ),
 tbl as (
   select e.t, c.oid is not null as present, coalesce(c.relrowsecurity, false) as rls,
@@ -69,7 +69,7 @@ from expected_triggers
 union all
 select 4, 'Structure', 'Function ' || f || ' exists',
        case when exists (select 1 from fn where proname = f) then 'OK' else 'FAIL' end, ''
-from unnest(array['handle_new_user', 'is_network_admin', 'can_view_school', 'has_school_role',
+from unnest(array['handle_new_user', 'session_verified', 'is_network_admin', 'can_view_school', 'has_school_role',
                   'record_nfc_scan', 'apply_inventory_transaction', 'apply_central_transaction',
                   'log_dispatch_as_central_transaction', 'log_consumption_as_transaction',
                   'receive_distribution', 'cancel_distribution', 'list_staff', 'update_staff',

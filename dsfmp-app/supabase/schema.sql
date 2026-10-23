@@ -17,6 +17,7 @@
   drop trigger if exists on_auth_user_created on auth.users;
   drop function if exists public.handle_new_user() cascade;
   drop function if exists public.has_any_role(text[]) cascade;
+  drop function if exists public.session_verified() cascade;
   drop function if exists public.is_network_admin() cascade;
   drop function if exists public.can_view_school(uuid) cascade;
   drop function if exists public.has_school_role(uuid, text[]) cascade;
@@ -45,6 +46,7 @@
   drop table if exists food_items cascade;
   drop table if exists nfc_devices cascade;
   drop table if exists beneficiaries cascade;
+  drop table if exists login_codes cascade;
   drop table if exists users cascade;
   drop table if exists schools cascade;
 
@@ -107,6 +109,23 @@
     school_id uuid references schools(school_id), -- null until assigned; unused for network_admin
     status text not null default 'active' check (status in ('active', 'suspended')),
     created_at timestamptz default now()
+  );
+
+  -- ------------------------------------------------------------
+  -- LOGIN_CODES: the second sign-in step. After signing in with a
+  -- password, a 6-digit code is emailed to the user and must be
+  -- entered before that login session can see or change anything
+  -- (see session_verified()). One row per login session; only the
+  -- login-code Edge Function reads or writes it.
+  -- ------------------------------------------------------------
+  create table login_codes (
+    session_id uuid primary key,             -- the session_id claim of the login's JWT
+    user_id uuid not null references auth.users(id) on delete cascade,
+    code_hash text not null,                 -- sha-256 of session_id:code, never the code itself
+    expires_at timestamptz not null,
+    attempts int not null default 0,
+    sent_at timestamptz not null default now(),
+    verified_at timestamptz
   );
 
   -- ------------------------------------------------------------
@@ -469,10 +488,27 @@
   alter table meal_attendance enable row level security;
   alter table reports enable row level security;
   alter table nfc_tag_logs enable row level security;
+  -- No policies: only the login-code Edge Function (service role) uses it.
+  alter table login_codes enable row level security;
+  revoke all on login_codes from anon, authenticated;
+
+  -- Has the current login finished signing in? Google sign-ins have
+  -- (Google already checked the user); password sign-ins have once
+  -- the emailed code was entered for this session. Every permission
+  -- check below requires it.
+  create function public.session_verified()
+  returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+    select coalesce(auth.jwt() -> 'amr', '[]'::jsonb) @> '[{"method": "oauth"}]'::jsonb
+      or exists (
+        select 1 from public.login_codes
+        where session_id = nullif(auth.jwt() ->> 'session_id', '')::uuid
+          and user_id = auth.uid() and verified_at is not null
+      );
+  $$;
 
   create function public.is_network_admin()
   returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-    select exists (
+    select public.session_verified() and exists (
       select 1 from public.users
       where user_id = auth.uid() and status = 'active' and role = 'network_admin'
     );
@@ -481,7 +517,7 @@
   -- Can the current user see this school's data?
   create function public.can_view_school(p_school_id uuid)
   returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-    select exists (
+    select public.session_verified() and exists (
       select 1 from public.users
       where user_id = auth.uid() and status = 'active'
         and (role = 'network_admin' or school_id = p_school_id)
@@ -492,16 +528,18 @@
   -- Network admins don't: they only view school records.
   create function public.has_school_role(p_school_id uuid, p_roles text[])
   returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-    select exists (
+    select public.session_verified() and exists (
       select 1 from public.users
       where user_id = auth.uid() and status = 'active'
         and school_id = p_school_id and role = any(p_roles)
     );
   $$;
 
+  revoke all on function public.session_verified() from public;
   revoke all on function public.is_network_admin() from public;
   revoke all on function public.can_view_school(uuid) from public;
   revoke all on function public.has_school_role(uuid, text[]) from public;
+  grant execute on function public.session_verified() to anon, authenticated;
   grant execute on function public.is_network_admin() to anon, authenticated;
   grant execute on function public.can_view_school(uuid) to anon, authenticated;
   grant execute on function public.has_school_role(uuid, text[]) to anon, authenticated;
@@ -538,7 +576,7 @@
 
   -- Every signed-in user can read the food list; the network admin keeps it.
   create policy "Signed-in users can read the food list"
-    on food_items for select using (auth.uid() is not null);
+    on food_items for select using (public.session_verified());
   create policy "Network admins can manage the food list"
     on food_items for all
     using (public.is_network_admin()) with check (public.is_network_admin());
