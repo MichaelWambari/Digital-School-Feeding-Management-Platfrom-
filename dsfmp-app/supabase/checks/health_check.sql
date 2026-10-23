@@ -72,7 +72,7 @@ select 4, 'Structure', 'Function ' || f || ' exists',
 from unnest(array['handle_new_user', 'is_network_admin', 'can_view_school', 'has_school_role',
                   'record_nfc_scan', 'apply_inventory_transaction', 'apply_central_transaction',
                   'log_dispatch_as_central_transaction', 'log_consumption_as_transaction',
-                  'receive_distribution', 'cancel_distribution',
+                  'receive_distribution', 'cancel_distribution', 'list_staff', 'update_staff',
                   'set_school_from_beneficiary', 'set_school_from_item']) f
 union all
 select 5, 'Structure', 'Security definer functions pin search_path',

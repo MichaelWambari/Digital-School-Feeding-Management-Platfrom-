@@ -18,6 +18,7 @@ export type Profile = {
   full_name: string;
   role: Role;
   school_id: string | null;
+  status: 'active' | 'suspended';
 };
 
 export type School = { school_id: string; name: string };
@@ -54,7 +55,7 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
       const [profileResult, schoolResult] = await Promise.all([
         supabase
           .from('users')
-          .select('user_id, full_name, role, school_id')
+          .select('user_id, full_name, role, school_id, status')
           .eq('user_id', auth.user?.id ?? '')
           .maybeSingle(),
         supabase.from('schools').select('school_id, name').eq('status', 'active').order('name'),
@@ -93,7 +94,7 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<SchoolValue | null>(
     () =>
-      profile && school
+      profile && profile.status === 'active' && school
         ? {
             profile,
             isNetworkAdmin: profile.role === 'network_admin',
@@ -119,6 +120,8 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
   if (!value) {
     const message = error
       ? `Could not load your account: ${error}`
+      : profile?.status === 'suspended'
+      ? 'Your account is suspended. Ask the network admin to restore it.'
       : profile?.role === 'network_admin'
       ? 'There are no active schools yet. Add a school in Supabase first.'
       : 'Your account is not assigned to a school yet. Ask an administrator to assign you.';

@@ -12,6 +12,9 @@ const MENU_ITEMS = [
   { label: 'Reports', screen: 'Reports', available: true },
 ];
 
+// Only network admins manage staff logins.
+const NETWORK_MENU_ITEMS = [{ label: 'Staff', screen: 'Staff', available: true }];
+
 const THEME_OPTIONS: { key: ThemePreference; label: string }[] = [
   { key: 'system', label: 'System' },
   { key: 'light', label: 'Light' },
@@ -90,7 +93,7 @@ export default function DashboardScreen({ navigation }: any) {
       </View>
 
       <View style={styles.menu}>
-        {MENU_ITEMS.map((item) => (
+        {(isNetworkAdmin ? [...MENU_ITEMS, ...NETWORK_MENU_ITEMS] : MENU_ITEMS).map((item) => (
           <TouchableOpacity
             key={item.screen}
             style={[styles.menuItem, !item.available && styles.menuItemDisabled]}

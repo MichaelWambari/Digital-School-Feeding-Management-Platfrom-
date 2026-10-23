@@ -29,6 +29,7 @@ supplier ──delivery──► central store ──dispatch──► school st
 | **Inventory** | *Network admin:* the central store. Keep the network's food list, record deliveries from suppliers and write-offs, with low-stock warnings. *School staff:* the school's stock, with low-stock warnings, a per-food reorder level and the history of food received and used. A database trigger keeps every stock level correct and blocks using more than is in stock. |
 | **Distribution** | *Network admin:* dispatch food from the central store to a school (cancel it while it's still in transit), and see for every school how much of each food was sent, how much was used and how much is in stock. *School staff:* confirm deliveries from the central store with the amount that actually arrived (any shortfall is recorded), and after each meal record how much of each food was used. The app shows the portion per student from that meal's attendance. |
 | **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food used per item, and current stock with low-stock items flagged. Network admins can switch between one school and all schools. |
+| **Staff** | *Network admin only:* create staff logins and give each a role and school, move staff between schools, suspend or restore them, and reset passwords. |
 | **NFC scanning** | Card readers (e.g. an ESP32) call one database function, `record_nfc_scan()`, to record a student's attendance at the current meal. Each reader belongs to a school and only accepts that school's cards. Every scan is logged for audit. |
 
 ### Roles
@@ -37,7 +38,7 @@ Every user has one role, and the database enforces it with row-level security:
 
 | Role | School | Can do |
 |---|---|---|
-| `network_admin` | All schools | Run the central store and the food list, dispatch food to schools, manage schools and NFC readers, and view every school's records. Can't change a school's students, attendance, stock or food used. |
+| `network_admin` | All schools | Run the central store and the food list, dispatch food to schools, manage staff, schools and NFC readers, and view every school's records. Can't change a school's students, attendance, stock or food used. |
 | `admin` | One school | Everything at their school, including managing NFC devices, meal times and reading the NFC audit log |
 | `coordinator` | One school | Manage students, record attendance and food used, manage reports |
 | `inventory_officer` | One school | Confirm deliveries, record food used and set reorder levels |
@@ -76,7 +77,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
     navigation/             Auth-based routing (logged out → Login)
     school/SchoolContext.tsx  Signed-in user's profile and current school; use useSchool()
     screens/                One file per module (Login, Dashboard, Students,
-                            Attendance, Inventory, Distribution, Reports); the
+                            Attendance, Inventory, Distribution, Reports, Staff); the
                             network admin's Inventory and Distribution are
                             CentralStoreScreen and NetworkDistributionScreen
     theme/ThemeContext.tsx  Light/dark/system colours; use makeStyles + useThemedStyles
@@ -85,6 +86,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
     fixes/NNN_*.sql         Migrations for an existing database, run in number order
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
     seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
+    functions/manage-staff/ Edge Function that creates staff logins and resets passwords
   scripts/simulate-reader.mjs  NFC reader simulator (npm run simulate)
   firmware/wokwi/           ESP32 reader firmware, runnable in the Wokwi simulator
 ```
@@ -115,7 +117,8 @@ can't end up filed under the wrong school. Stock never changes directly:
 dispatching (`food_distribution`), confirming a delivery
 (`receive_distribution()`), cancelling one (`cancel_distribution()`) and
 recording food used each add a transaction, and triggers keep the stock
-levels in step. In the database, students are still called
+levels in step. Staff are listed and edited with `list_staff()` and
+`update_staff()` (network admins only). In the database, students are still called
 `beneficiaries`. `nfc_tag_logs` deliberately
 has no foreign keys on the card and reader, so scans from unknown cards or
 unregistered readers are still recorded.
@@ -161,20 +164,45 @@ npx expo start --web  # or run in the browser at http://localhost:8081
 Your phone and computer must be on the same Wi-Fi network. If that doesn't
 work (on school or office networks, for example), use `npx expo start --tunnel`.
 
-### 3. Create users
+### 3. Create the first network admin
 
-There is no sign-up screen yet, so create users in Supabase under
-**Authentication → Users → Add user**. A trigger adds a matching `users` row
-with the role `coordinator` and no school. In the Table Editor, open `users`
-and:
+1. In Supabase, go to **Authentication → Users → Add user → Create new
+   user**. Enter an email and password and tick **Auto Confirm User**. A
+   trigger adds a matching `users` row with the role `coordinator` and no
+   school.
+2. Make that user a network admin in the **SQL Editor**:
 
-- set `school_id` to the user's school (from the `schools` table), and
-- change `role` if needed: `admin`, `inventory_officer`, or `network_admin`
-  (who doesn't need a school).
+   ```sql
+   update public.users u set role = 'network_admin', school_id = null
+   from auth.users a
+   where a.id = u.user_id and a.email = 'you@example.com';
+   ```
 
-Until a user has a school, the app shows them a "not assigned to a school"
-message. A new database starts with one school, **Jasiri School**. Add more
-schools as rows in the `schools` table.
+A new database starts with one school, **Jasiri School**. Add more schools as
+rows in the `schools` table.
+
+### 4. Staff accounts
+
+Everyone else is added from the app's **Staff** screen, which only network
+admins see. It needs the `manage-staff` Edge Function, because creating a
+login takes the service role key, which must never be in the app:
+
+1. In Supabase, open **Edge Functions → Deploy a new function → Via Editor**.
+2. Name it `manage-staff`, paste the contents of
+   `dsfmp-app/supabase/functions/manage-staff/index.ts` and deploy.
+   Supabase gives the function its URL and service role key automatically.
+3. In the function's settings, turn off **Verify JWT**. The function checks
+   the signed-in user itself and only accepts active network admins.
+
+Then, signed in as a network admin, open **Staff → + Add**. Enter the
+person's name, email and a password, choose their role and school, and tap
+**Create login**. Give them the email and password, and they can sign in
+straight away. Tap someone in the list to change their role or school,
+suspend them (they can still sign in but see nothing) or set a new password.
+
+Without the Edge Function you can still add users by hand: create them as
+in step 3, then set their `role` and `school_id` in the `users` table. Until
+a user has a school, the app shows them a "not assigned to a school" message.
 
 ## Development notes
 
