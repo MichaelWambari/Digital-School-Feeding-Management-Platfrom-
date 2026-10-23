@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   RefreshControl,
@@ -10,6 +9,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
+import { PressableScale } from '../components/Motion';
 
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
@@ -207,16 +207,16 @@ export default function ReportsScreen({ navigation }: any) {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={loadReport} />}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Reports</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.segment}>
         {RANGES.map((r) => (
-          <TouchableOpacity
+          <PressableScale
             key={r.key}
             style={[styles.segmentItem, range === r.key && styles.segmentItemActive]}
             onPress={() => setRange(r.key)}
@@ -225,14 +225,14 @@ export default function ReportsScreen({ navigation }: any) {
             <Text style={[styles.segmentText, range === r.key && styles.segmentTextActive]}>
               {r.label}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
 
       {isNetworkAdmin && schools.length > 1 && (
         <View style={[styles.segment, styles.scopeSegment]}>
           {(['school', 'all'] as const).map((s) => (
-            <TouchableOpacity
+            <PressableScale
               key={s}
               style={[styles.segmentItem, scope === s && styles.segmentItemActive]}
               onPress={() => setScope(s)}
@@ -241,7 +241,7 @@ export default function ReportsScreen({ navigation }: any) {
               <Text style={[styles.segmentText, scope === s && styles.segmentTextActive]}>
                 {s === 'school' ? school.name : 'All schools'}
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           ))}
         </View>
       )}

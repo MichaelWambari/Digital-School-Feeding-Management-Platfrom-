@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
   ActivityIndicator,
@@ -12,6 +11,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
+import { PressableScale } from '../components/Motion';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -163,16 +163,16 @@ export default function AttendanceScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Attendance</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.segment}>
         {MEAL_TYPES.map((meal) => (
-          <TouchableOpacity
+          <PressableScale
             key={meal}
             style={[styles.segmentItem, mealType === meal && styles.segmentItemActive]}
             onPress={() => setMealType(meal)}
@@ -181,7 +181,7 @@ export default function AttendanceScreen({ navigation }: any) {
             <Text style={[styles.segmentText, mealType === meal && styles.segmentTextActive]}>
               {MEAL_LABELS[meal]}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
 
@@ -229,7 +229,7 @@ export default function AttendanceScreen({ navigation }: any) {
                 <Text style={styles.rowName}>{item.full_name}</Text>
                 <Text style={styles.rowMeta}>{item.admission_no}</Text>
               </View>
-              <TouchableOpacity
+              <PressableScale
                 style={[
                   styles.markButton,
                   isPresent && styles.markButtonDone,
@@ -256,7 +256,7 @@ export default function AttendanceScreen({ navigation }: any) {
                     {isPresent ? '✓ Present' : isNetworkAdmin ? 'Not recorded' : 'Mark present'}
                   </Text>
                 )}
-              </TouchableOpacity>
+              </PressableScale>
             </View>
           );
         }}

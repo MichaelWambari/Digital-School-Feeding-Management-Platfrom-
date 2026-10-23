@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, ThemePreference, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { ROLE_LABELS, useSchool } from '../school/SchoolContext';
+import { FadeIn, PressableScale } from '../components/Motion';
 
 const MENU_ITEMS = [
   { label: 'Students', screen: 'Students', available: true },
@@ -55,9 +56,9 @@ export default function DashboardScreen({ navigation }: any) {
             {profile.full_name} · {ROLE_LABELS[profile.role]}
           </Text>
         </View>
-        <TouchableOpacity onPress={handleLogout}>
+        <PressableScale onPress={handleLogout}>
           <Text style={styles.logout}>Logout</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
 
       {isNetworkAdmin && schools.length > 1 && (
@@ -70,7 +71,7 @@ export default function DashboardScreen({ navigation }: any) {
             contentContainerStyle={styles.chipsContent}
           >
             {schools.map((s) => (
-              <TouchableOpacity
+              <PressableScale
                 key={s.school_id}
                 style={[styles.chip, s.school_id === school.school_id && styles.chipActive]}
                 onPress={() => setSchoolId(s.school_id)}
@@ -81,36 +82,38 @@ export default function DashboardScreen({ navigation }: any) {
                 >
                   {s.name}
                 </Text>
-              </TouchableOpacity>
+              </PressableScale>
             ))}
           </ScrollView>
         </>
       )}
 
-      <View style={styles.statCard}>
+      <FadeIn style={styles.statCard}>
         <Text style={styles.statNumber}>{beneficiaryCount ?? '—'}</Text>
         <Text style={styles.statLabel}>Active students</Text>
-      </View>
+      </FadeIn>
 
       <View style={styles.menu}>
-        {(isNetworkAdmin ? [...MENU_ITEMS, ...NETWORK_MENU_ITEMS] : MENU_ITEMS).map((item) => (
-          <TouchableOpacity
-            key={item.screen}
-            style={[styles.menuItem, !item.available && styles.menuItemDisabled]}
-            onPress={() => item.available && navigation.navigate(item.screen)}
-            disabled={!item.available}
-            accessibilityState={{ disabled: !item.available }}
-          >
-            <Text style={styles.menuText}>{item.label}</Text>
-            <Text style={styles.chevron}>{item.available ? '›' : 'Coming soon'}</Text>
-          </TouchableOpacity>
+        {(isNetworkAdmin ? [...MENU_ITEMS, ...NETWORK_MENU_ITEMS] : MENU_ITEMS).map((item, index) => (
+          // Menu items fade in one after another.
+          <FadeIn key={item.screen} delay={80 + index * 50}>
+            <PressableScale
+              style={[styles.menuItem, !item.available && styles.menuItemDisabled]}
+              onPress={() => item.available && navigation.navigate(item.screen)}
+              disabled={!item.available}
+              accessibilityState={{ disabled: !item.available }}
+            >
+              <Text style={styles.menuText}>{item.label}</Text>
+              <Text style={styles.chevron}>{item.available ? '›' : 'Coming soon'}</Text>
+            </PressableScale>
+          </FadeIn>
         ))}
       </View>
 
       <Text style={styles.sectionTitle}>Theme</Text>
       <View style={styles.segment}>
         {THEME_OPTIONS.map((option) => (
-          <TouchableOpacity
+          <PressableScale
             key={option.key}
             style={[styles.segmentItem, preference === option.key && styles.segmentItemActive]}
             onPress={() => setPreference(option.key)}
@@ -121,7 +124,7 @@ export default function DashboardScreen({ navigation }: any) {
             >
               {option.label}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
     </ScrollView>

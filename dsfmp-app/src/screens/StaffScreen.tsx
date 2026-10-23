@@ -3,10 +3,8 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
-  ScrollView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -14,6 +12,7 @@ import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { ROLE_LABELS, Role, useSchool } from '../school/SchoolContext';
+import { FadeInScrollView, PressableScale } from '../components/Motion';
 
 type Staff = {
   user_id: string;
@@ -194,11 +193,11 @@ export default function StaffScreen({ navigation }: any) {
     const isNew = editing === 'new';
     const isSelf = !isNew && (editing as Staff).user_id === profile.user_id;
     return (
-      <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setEditing(null)} disabled={saving}>
+          <PressableScale onPress={() => setEditing(null)} disabled={saving}>
             <Text style={styles.back}>‹ Cancel</Text>
-          </TouchableOpacity>
+          </PressableScale>
           <Text style={styles.headerTitle}>{isNew ? 'Add staff' : 'Edit staff'}</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -222,6 +221,7 @@ export default function StaffScreen({ navigation }: any) {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
+            autoComplete="off"
             placeholder="They sign in with this"
           />
         ) : (
@@ -240,6 +240,7 @@ export default function StaffScreen({ navigation }: any) {
               autoCorrect={false}
               secureTextEntry
               placeholder="At least 8 characters"
+              autoComplete="new-password"
             />
           </>
         )}
@@ -247,7 +248,7 @@ export default function StaffScreen({ navigation }: any) {
         <Text style={styles.label}>Role</Text>
         <View style={styles.chipWrap}>
           {ROLES.map((role) => (
-            <TouchableOpacity
+            <PressableScale
               key={role}
               style={[styles.chip, form.role === role && styles.chipActive, isSelf && styles.chipDisabled]}
               onPress={() => setForm({ ...form, role })}
@@ -257,7 +258,7 @@ export default function StaffScreen({ navigation }: any) {
               <Text style={[styles.chipText, form.role === role && styles.chipTextActive]}>
                 {ROLE_LABELS[role]}
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           ))}
         </View>
         {isSelf && (
@@ -269,7 +270,7 @@ export default function StaffScreen({ navigation }: any) {
             <Text style={styles.label}>School</Text>
             <View style={styles.chipWrap}>
               {schools.map((s) => (
-                <TouchableOpacity
+                <PressableScale
                   key={s.school_id}
                   style={[styles.chip, form.school_id === s.school_id && styles.chipActive]}
                   onPress={() => setForm({ ...form, school_id: s.school_id })}
@@ -280,7 +281,7 @@ export default function StaffScreen({ navigation }: any) {
                   >
                     {s.name}
                   </Text>
-                </TouchableOpacity>
+                </PressableScale>
               ))}
             </View>
           </>
@@ -291,7 +292,7 @@ export default function StaffScreen({ navigation }: any) {
             <Text style={styles.label}>Status</Text>
             <View style={[styles.segment, isSelf && styles.chipDisabled]}>
               {(['active', 'suspended'] as const).map((status) => (
-                <TouchableOpacity
+                <PressableScale
                   key={status}
                   style={[styles.segmentItem, form.status === status && styles.segmentItemActive]}
                   onPress={() => setForm({ ...form, status })}
@@ -303,7 +304,7 @@ export default function StaffScreen({ navigation }: any) {
                   >
                     {status === 'active' ? 'Active' : 'Suspended'}
                   </Text>
-                </TouchableOpacity>
+                </PressableScale>
               ))}
             </View>
           </>
@@ -311,13 +312,13 @@ export default function StaffScreen({ navigation }: any) {
 
         {formError && <Text style={styles.error}>{formError}</Text>}
 
-        <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
+        <PressableScale style={styles.button} onPress={handleSave} disabled={saving}>
           {saving ? (
             <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <Text style={styles.buttonText}>{isNew ? 'Create login' : 'Save'}</Text>
           )}
-        </TouchableOpacity>
+        </PressableScale>
 
         {!isNew && (
           <>
@@ -331,9 +332,10 @@ export default function StaffScreen({ navigation }: any) {
               autoCorrect={false}
               secureTextEntry
               placeholder="New password, at least 8 characters"
+              autoComplete="new-password"
             />
             {passwordMessage && <Text style={styles.hint}>{passwordMessage}</Text>}
-            <TouchableOpacity
+            <PressableScale
               style={styles.secondaryButton}
               onPress={handleSetPassword}
               disabled={settingPassword}
@@ -343,10 +345,10 @@ export default function StaffScreen({ navigation }: any) {
               ) : (
                 <Text style={styles.secondaryButtonText}>Set password</Text>
               )}
-            </TouchableOpacity>
+            </PressableScale>
           </>
         )}
-      </ScrollView>
+      </FadeInScrollView>
     );
   }
 
@@ -369,13 +371,13 @@ export default function StaffScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Staff</Text>
-        <TouchableOpacity onPress={() => openForm('new')}>
+        <PressableScale onPress={() => openForm('new')}>
           <Text style={styles.add}>+ Add</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
 
       <TextInput
@@ -402,7 +404,7 @@ export default function StaffScreen({ navigation }: any) {
           )
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => openForm(item)}>
+          <PressableScale style={styles.row} onPress={() => openForm(item)}>
             <View style={styles.rowMain}>
               <Text style={styles.rowName}>
                 {item.full_name}
@@ -420,7 +422,7 @@ export default function StaffScreen({ navigation }: any) {
               </Text>
             </View>
             {item.status === 'suspended' && <Text style={styles.badge}>suspended</Text>}
-          </TouchableOpacity>
+          </PressableScale>
         )}
       />
     </View>

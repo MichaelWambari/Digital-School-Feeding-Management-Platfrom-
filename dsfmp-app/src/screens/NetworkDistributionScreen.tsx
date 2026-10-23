@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
@@ -12,6 +11,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
+import { FadeInScrollView, PressableScale } from '../components/Motion';
 
 // The network admin's side of food distribution: dispatching food from the
 // central store to schools, and how much of each food every school uses.
@@ -80,16 +80,16 @@ export default function NetworkDistributionScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.link}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Distribution</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.segment}>
         {(['dispatch', 'schools'] as const).map((t) => (
-          <TouchableOpacity
+          <PressableScale
             key={t}
             style={[styles.segmentItem, tab === t && styles.segmentItemActive]}
             onPress={() => setTab(t)}
@@ -98,7 +98,7 @@ export default function NetworkDistributionScreen({ navigation }: any) {
             <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
               {t === 'dispatch' ? 'Dispatch to schools' : 'Use by school'}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
 
@@ -235,7 +235,7 @@ function DispatchTab() {
   }
 
   return (
-    <ScrollView
+    <FadeInScrollView
       style={styles.tabBody}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
@@ -243,7 +243,7 @@ function DispatchTab() {
       <Text style={styles.label}>School</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContent}>
         {schools.map((s) => (
-          <TouchableOpacity
+          <PressableScale
             key={s.school_id}
             style={[styles.chip, s.school_id === schoolId && styles.chipActive]}
             onPress={() => {
@@ -253,7 +253,7 @@ function DispatchTab() {
             accessibilityState={{ selected: s.school_id === schoolId }}
           >
             <Text style={[styles.chipText, s.school_id === schoolId && styles.chipTextActive]}>{s.name}</Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </ScrollView>
 
@@ -263,7 +263,7 @@ function DispatchTab() {
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContent}>
           {foods.map((f) => (
-            <TouchableOpacity
+            <PressableScale
               key={f.food_id}
               style={[styles.chip, f.food_id === foodId && styles.chipActive]}
               onPress={() => {
@@ -276,7 +276,7 @@ function DispatchTab() {
               <Text style={[styles.chipMeta, f.food_id === foodId && styles.chipTextActive]}>
                 {formatQty(f.quantity_available, f.unit)} in store
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           ))}
         </ScrollView>
       )}
@@ -296,7 +296,7 @@ function DispatchTab() {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <TouchableOpacity
+      <PressableScale
         style={[styles.button, confirming && styles.buttonConfirm]}
         onPress={handleDispatch}
         disabled={busy || !food || !school}
@@ -310,7 +310,7 @@ function DispatchTab() {
               : 'Dispatch'}
           </Text>
         )}
-      </TouchableOpacity>
+      </PressableScale>
 
       <Text style={styles.sectionTitle}>Recent dispatches</Text>
       {dispatches.length === 0 ? (
@@ -343,7 +343,7 @@ function DispatchTab() {
                 </Text>
               </View>
               {d.status === 'in_transit' && (
-                <TouchableOpacity
+                <PressableScale
                   style={[styles.cancelButton, cancelId === d.distribution_id && styles.cancelButtonConfirm]}
                   onPress={() => handleCancel(d)}
                   disabled={busy}
@@ -351,14 +351,14 @@ function DispatchTab() {
                   <Text style={styles.cancelText}>
                     {cancelId === d.distribution_id ? 'Confirm cancel' : 'Cancel'}
                   </Text>
-                </TouchableOpacity>
+                </PressableScale>
               )}
             </View>
           );
         })
       )}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </FadeInScrollView>
   );
 }
 
@@ -482,20 +482,20 @@ function SchoolsTab() {
   }
 
   return (
-    <ScrollView
+    <FadeInScrollView
       style={styles.tabBody}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
     >
       <View style={styles.chipRow}>
         {RANGES.map((r) => (
-          <TouchableOpacity
+          <PressableScale
             key={r.key}
             style={[styles.chip, range === r.key && styles.chipActive]}
             onPress={() => setRange(r.key)}
             accessibilityState={{ selected: range === r.key }}
           >
             <Text style={[styles.chipText, range === r.key && styles.chipTextActive]}>{r.label}</Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
       <Text style={styles.hint}>
@@ -524,7 +524,7 @@ function SchoolsTab() {
         );
       })}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </FadeInScrollView>
   );
 }
 

@@ -3,9 +3,7 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -13,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import NetworkDistributionScreen from './NetworkDistributionScreen';
+import { FadeInScrollView, PressableScale } from '../components/Motion';
 
 // A school's side of food distribution: food received from the central
 // store, and food used at each meal.
@@ -85,16 +84,16 @@ function SchoolDistributionScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.link}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Distribution</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.segment}>
         {(['usage', 'deliveries'] as const).map((t) => (
-          <TouchableOpacity
+          <PressableScale
             key={t}
             style={[styles.segmentItem, tab === t && styles.segmentItemActive]}
             onPress={() => setTab(t)}
@@ -103,7 +102,7 @@ function SchoolDistributionScreen({ navigation }: any) {
             <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
               {t === 'usage' ? 'Food used' : 'Received from source'}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
 
@@ -269,14 +268,14 @@ function UsageTab() {
   }
 
   return (
-    <ScrollView
+    <FadeInScrollView
       style={styles.tabBody}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
     >
       <View style={styles.chipRow}>
         {([0, 1] as const).map((d) => (
-          <TouchableOpacity
+          <PressableScale
             key={d}
             style={[styles.chip, daysAgo === d && styles.chipActive]}
             onPress={() => setDaysAgo(d)}
@@ -285,13 +284,13 @@ function UsageTab() {
             <Text style={[styles.chipText, daysAgo === d && styles.chipTextActive]}>
               {d === 0 ? 'Today' : 'Yesterday'}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
 
       <View style={styles.segment}>
         {servedMeals.map((meal) => (
-          <TouchableOpacity
+          <PressableScale
             key={meal}
             style={[styles.segmentItem, mealType === meal && styles.segmentItemActive]}
             onPress={() => setMealType(meal)}
@@ -300,7 +299,7 @@ function UsageTab() {
             <Text style={[styles.segmentText, mealType === meal && styles.segmentTextActive]}>
               {MEAL_LABELS[meal]}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
 
@@ -351,7 +350,7 @@ function UsageTab() {
       {error && <Text style={styles.error}>{error}</Text>}
 
       {items.length > 0 && (
-        <TouchableOpacity
+        <PressableScale
           style={[styles.button, confirming && styles.buttonConfirm]}
           onPress={handleSave}
           disabled={saving}
@@ -367,7 +366,7 @@ function UsageTab() {
                 : `Save food used at ${MEAL_LABELS[mealType].toLowerCase()}`}
             </Text>
           )}
-        </TouchableOpacity>
+        </PressableScale>
       )}
 
       <Text style={styles.sectionTitle}>Food used, last {HISTORY_DAYS} days</Text>
@@ -390,7 +389,7 @@ function UsageTab() {
         ))
       )}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </FadeInScrollView>
   );
 }
 
@@ -466,7 +465,7 @@ function DeliveriesTab() {
   const past = deliveries.filter((d) => d.status !== 'in_transit');
 
   return (
-    <ScrollView
+    <FadeInScrollView
       style={styles.tabBody}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={loadDeliveries} />}
@@ -499,7 +498,7 @@ function DeliveriesTab() {
                       onChangeText={setReceived}
                       keyboardType="decimal-pad"
                     />
-                    <TouchableOpacity
+                    <PressableScale
                       style={styles.inlineButton}
                       onPress={() => handleConfirm(d)}
                       disabled={busy}
@@ -509,16 +508,16 @@ function DeliveriesTab() {
                       ) : (
                         <Text style={styles.inlineButtonText}>Confirm</Text>
                       )}
-                    </TouchableOpacity>
+                    </PressableScale>
                   </View>
-                  <TouchableOpacity onPress={() => setConfirmId(null)} disabled={busy}>
+                  <PressableScale onPress={() => setConfirmId(null)} disabled={busy}>
                     <Text style={styles.cancelLink}>Cancel</Text>
-                  </TouchableOpacity>
+                  </PressableScale>
                 </>
               ) : (
-                <TouchableOpacity style={styles.smallButton} onPress={() => startConfirm(d)}>
+                <PressableScale style={styles.smallButton} onPress={() => startConfirm(d)}>
                   <Text style={styles.inlineButtonText}>Confirm receipt</Text>
-                </TouchableOpacity>
+                </PressableScale>
               )}
             </View>
           );
@@ -553,7 +552,7 @@ function DeliveriesTab() {
         })
       )}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </FadeInScrollView>
   );
 }
 

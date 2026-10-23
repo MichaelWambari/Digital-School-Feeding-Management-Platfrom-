@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { PressableScale } from '../components/Motion';
 
 export type Role = 'network_admin' | 'admin' | 'coordinator' | 'inventory_officer';
 
@@ -128,12 +129,12 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
     return (
       <View style={styles.center}>
         <Text style={styles.message}>{message}</Text>
-        <TouchableOpacity style={styles.button} onPress={load}>
+        <PressableScale style={styles.button} onPress={load}>
           <Text style={styles.buttonText}>Try again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => supabase.auth.signOut()}>
+        </PressableScale>
+        <PressableScale onPress={() => supabase.auth.signOut()}>
           <Text style={styles.logout}>Logout</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
     );
   }

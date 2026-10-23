@@ -3,13 +3,13 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { PressableScale } from '../components/Motion';
 
 export default function LoginScreen() {
   const { colors, styles } = useThemedStyles(makeStyles);
@@ -63,13 +63,13 @@ export default function LoginScreen() {
         onChangeText={setPassword}
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+      <PressableScale style={styles.button} onPress={handleLogin} disabled={loading}>
         {loading ? (
           <ActivityIndicator color={colors.onPrimary} />
         ) : (
           <Text style={styles.buttonText}>Login</Text>
         )}
-      </TouchableOpacity>
+      </PressableScale>
     </View>
   );
 }

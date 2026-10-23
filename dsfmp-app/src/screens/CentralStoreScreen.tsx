@@ -3,15 +3,14 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
-  ScrollView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
+import { FadeInScrollView, PressableScale } from '../components/Motion';
 
 // The network admin's Inventory: the central store that food is
 // dispatched from. Each food on the network's food list has one row.
@@ -119,13 +118,13 @@ export default function CentralStoreScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.link}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Central store</Text>
-        <TouchableOpacity onPress={() => setFormTarget('new')}>
+        <PressableScale onPress={() => setFormTarget('new')}>
           <Text style={[styles.link, styles.linkStrong]}>+ Food</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
 
       <View style={styles.summary}>
@@ -152,7 +151,7 @@ export default function CentralStoreScreen({ navigation }: any) {
           )
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => setDetailId(item.food_id)}>
+          <PressableScale style={styles.row} onPress={() => setDetailId(item.food_id)}>
             <View style={styles.rowMain}>
               <Text style={styles.rowName}>{item.item_name}</Text>
               <Text style={styles.rowMeta}>Reorder at {formatQty(item.reorder_level, item.unit)}</Text>
@@ -161,7 +160,7 @@ export default function CentralStoreScreen({ navigation }: any) {
               <Text style={styles.rowQty}>{formatQty(item.quantity_available, item.unit)}</Text>
               {isLowStock(item) && <Text style={styles.lowBadge}>Low stock</Text>}
             </View>
-          </TouchableOpacity>
+          </PressableScale>
         )}
       />
     </View>
@@ -231,11 +230,11 @@ function FoodFormView({
   }
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => onDone(false)} disabled={saving}>
+        <PressableScale onPress={() => onDone(false)} disabled={saving}>
           <Text style={styles.link}>‹ Cancel</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>{target === 'new' ? 'Add food' : 'Edit food'}</Text>
         <View style={styles.headerSpacer} />
       </View>
@@ -277,14 +276,14 @@ function FoodFormView({
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
+      <PressableScale style={styles.button} onPress={handleSave} disabled={saving}>
         {saving ? (
           <ActivityIndicator color={colors.onPrimary} />
         ) : (
           <Text style={styles.buttonText}>Save</Text>
         )}
-      </TouchableOpacity>
-    </ScrollView>
+      </PressableScale>
+    </FadeInScrollView>
   );
 }
 
@@ -364,14 +363,14 @@ function StockDetailView({
   }
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} disabled={saving}>
+        <PressableScale onPress={onBack} disabled={saving}>
           <Text style={styles.link}>‹ Central store</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onEdit} disabled={saving}>
+        </PressableScale>
+        <PressableScale onPress={onEdit} disabled={saving}>
           <Text style={styles.link}>Edit</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
 
       <Text style={styles.detailTitle}>{food.item_name}</Text>
@@ -386,7 +385,7 @@ function StockDetailView({
       <Text style={styles.sectionTitle}>Record stock movement</Text>
       <View style={styles.segment}>
         {(['received', 'written_off'] as const).map((t) => (
-          <TouchableOpacity
+          <PressableScale
             key={t}
             style={[styles.segmentItem, type === t && styles.segmentItemActive]}
             onPress={() => setType(t)}
@@ -395,7 +394,7 @@ function StockDetailView({
             <Text style={[styles.segmentText, type === t && styles.segmentTextActive]}>
               {t === 'received' ? 'Delivery received' : 'Write off'}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </View>
       <Text style={styles.hint}>
@@ -416,7 +415,7 @@ function StockDetailView({
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <TouchableOpacity style={styles.button} onPress={handleRecord} disabled={saving}>
+      <PressableScale style={styles.button} onPress={handleRecord} disabled={saving}>
         {saving ? (
           <ActivityIndicator color={colors.onPrimary} />
         ) : (
@@ -424,7 +423,7 @@ function StockDetailView({
             {type === 'received' ? 'Add to store' : 'Remove from store'}
           </Text>
         )}
-      </TouchableOpacity>
+      </PressableScale>
 
       <Text style={styles.sectionTitle}>Recent movements</Text>
       {historyLoading ? (
@@ -453,7 +452,7 @@ function StockDetailView({
         })
       )}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </FadeInScrollView>
   );
 }
 

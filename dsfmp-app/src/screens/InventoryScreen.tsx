@@ -3,10 +3,8 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
-  ScrollView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -14,6 +12,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import CentralStoreScreen from './CentralStoreScreen';
+import { FadeInScrollView, PressableScale } from '../components/Motion';
 
 type Item = {
   item_id: string;
@@ -97,9 +96,9 @@ function SchoolInventoryScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.link}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Inventory</Text>
         <View style={styles.headerSpacer} />
       </View>
@@ -128,7 +127,7 @@ function SchoolInventoryScreen({ navigation }: any) {
           )
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => setDetailId(item.item_id)}>
+          <PressableScale style={styles.row} onPress={() => setDetailId(item.item_id)}>
             <View style={styles.rowMain}>
               <Text style={styles.rowName}>{item.food_items.item_name}</Text>
               <Text style={styles.rowMeta}>
@@ -141,7 +140,7 @@ function SchoolInventoryScreen({ navigation }: any) {
               </Text>
               {isLowStock(item) && <Text style={styles.lowBadge}>Low stock</Text>}
             </View>
-          </TouchableOpacity>
+          </PressableScale>
         )}
       />
     </View>
@@ -215,11 +214,11 @@ function StockDetailView({
   }
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} disabled={saving}>
+        <PressableScale onPress={onBack} disabled={saving}>
           <Text style={styles.link}>‹ Inventory</Text>
-        </TouchableOpacity>
+        </PressableScale>
       </View>
 
       <Text style={styles.detailTitle}>{item.food_items.item_name}</Text>
@@ -243,13 +242,13 @@ function StockDetailView({
               keyboardType="decimal-pad"
               placeholder="Warn when stock falls to this amount"
             />
-            <TouchableOpacity style={styles.inlineButton} onPress={handleSaveReorderLevel} disabled={saving}>
+            <PressableScale style={styles.inlineButton} onPress={handleSaveReorderLevel} disabled={saving}>
               {saving ? (
                 <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <Text style={styles.buttonText}>Save</Text>
               )}
-            </TouchableOpacity>
+            </PressableScale>
           </View>
           {error && <Text style={styles.error}>{error}</Text>}
         </>
@@ -284,7 +283,7 @@ function StockDetailView({
         })
       )}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </FadeInScrollView>
   );
 }
 

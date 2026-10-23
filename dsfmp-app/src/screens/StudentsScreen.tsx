@@ -3,16 +3,15 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
-  ScrollView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
+import { FadeInScrollView, PressableScale } from '../components/Motion';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -145,11 +144,11 @@ export default function StudentsScreen({ navigation }: any) {
 
   if (editing) {
     return (
-      <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setEditing(null)} disabled={saving}>
+          <PressableScale onPress={() => setEditing(null)} disabled={saving}>
             <Text style={styles.back}>‹ Cancel</Text>
-          </TouchableOpacity>
+          </PressableScale>
           <Text style={styles.headerTitle}>
             {editing === 'new' ? 'Add student' : 'Edit student'}
           </Text>
@@ -198,7 +197,7 @@ export default function StudentsScreen({ navigation }: any) {
         <Text style={styles.label}>Status</Text>
         <View style={styles.segment}>
           {(['active', 'inactive'] as const).map((status) => (
-            <TouchableOpacity
+            <PressableScale
               key={status}
               style={[styles.segmentItem, form.status === status && styles.segmentItemActive]}
               onPress={() => setForm({ ...form, status })}
@@ -209,20 +208,20 @@ export default function StudentsScreen({ navigation }: any) {
               >
                 {status === 'active' ? 'Active' : 'Inactive'}
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           ))}
         </View>
 
         {formError && <Text style={styles.error}>{formError}</Text>}
 
-        <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
+        <PressableScale style={styles.button} onPress={handleSave} disabled={saving}>
           {saving ? (
             <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <Text style={styles.buttonText}>Save</Text>
           )}
-        </TouchableOpacity>
-      </ScrollView>
+        </PressableScale>
+      </FadeInScrollView>
     );
   }
 
@@ -238,16 +237,16 @@ export default function StudentsScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <PressableScale onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
+        </PressableScale>
         <Text style={styles.headerTitle}>Students</Text>
         {isNetworkAdmin ? (
           <View style={styles.headerSpacer} />
         ) : (
-          <TouchableOpacity onPress={() => openForm('new')}>
+          <PressableScale onPress={() => openForm('new')}>
             <Text style={styles.add}>+ Add</Text>
-          </TouchableOpacity>
+          </PressableScale>
         )}
       </View>
 
@@ -279,7 +278,7 @@ export default function StudentsScreen({ navigation }: any) {
           )
         }
         renderItem={({ item }) => (
-          <TouchableOpacity
+          <PressableScale
             style={styles.row}
             onPress={() => openForm(item)}
             disabled={isNetworkAdmin}
@@ -295,7 +294,7 @@ export default function StudentsScreen({ navigation }: any) {
             <Text style={[styles.badge, item.status === 'inactive' && styles.badgeInactive]}>
               {item.status}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         )}
       />
     </View>
