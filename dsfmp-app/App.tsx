@@ -1,5 +1,6 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
@@ -15,11 +16,13 @@ export default function App() {
 }
 
 function ThemedRoot() {
-  const { scheme, colors } = useTheme();
+  const { scheme, colors, paperTheme } = useTheme();
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-      <AppNavigator />
-    </SafeAreaView>
+    <PaperProvider theme={paperTheme}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+        <AppNavigator />
+      </SafeAreaView>
+    </PaperProvider>
   );
 }

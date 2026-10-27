@@ -17,6 +17,13 @@ const useNativeDriver = Platform.OS !== 'web';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+// A light tap on phones; web has no haptics.
+export function tapFeedback() {
+  if (Platform.OS !== 'web') {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }
+}
+
 type PressableScaleProps = Omit<PressableProps, 'style'> & { style?: StyleProp<ViewStyle> };
 
 // Drop-in replacement for TouchableOpacity: it shrinks slightly while
@@ -46,9 +53,7 @@ export function PressableScale({ style, onPressIn, onPressOut, onPress, ...rest 
         onPressOut?.(e);
       }}
       onPress={(e: GestureResponderEvent) => {
-        if (Platform.OS !== 'web') {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        }
+        tapFeedback();
         onPress?.(e);
       }}
     />

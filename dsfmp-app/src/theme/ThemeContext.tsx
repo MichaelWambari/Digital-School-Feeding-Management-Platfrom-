@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MD3DarkTheme, MD3LightTheme, MD3Theme } from 'react-native-paper';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -46,6 +47,46 @@ const darkColors: Colors = {
   warningText: '#fcd34d',
 };
 
+// Paper's Material 3 theme with the app palette swapped in, so Paper
+// components match the hand-styled screens in both light and dark.
+function makePaperTheme(scheme: 'light' | 'dark', c: Colors): MD3Theme {
+  const dark = scheme === 'dark';
+  const base = dark ? MD3DarkTheme : MD3LightTheme;
+  return {
+    ...base,
+    roundness: 3,
+    colors: {
+      ...base.colors,
+      primary: c.primary,
+      onPrimary: c.onPrimary,
+      primaryContainer: dark ? '#1e3a8a' : '#dbeafe',
+      onPrimaryContainer: dark ? '#dbeafe' : '#1e3a8a',
+      secondaryContainer: dark ? '#1e3a8a' : '#dbeafe',
+      onSecondaryContainer: dark ? '#dbeafe' : '#1e3a8a',
+      background: c.background,
+      surface: c.background,
+      onSurface: c.text,
+      surfaceVariant: c.surface,
+      onSurfaceVariant: c.textMuted,
+      outline: c.border,
+      outlineVariant: c.divider,
+      error: c.danger,
+      // Neutral greys instead of Material's default purple tint.
+      elevation: {
+        level0: 'transparent',
+        level1: dark ? '#16191f' : '#f9fafb',
+        level2: dark ? '#1c1f26' : '#f3f4f6',
+        level3: dark ? '#22262e' : '#eef0f3',
+        level4: dark ? '#252932' : '#ebedf0',
+        level5: dark ? '#292e38' : '#e7e9ed',
+      },
+    },
+  };
+}
+
+const lightPaperTheme = makePaperTheme('light', lightColors);
+const darkPaperTheme = makePaperTheme('dark', darkColors);
+
 const STORAGE_KEY = 'dsfmp.themePreference';
 
 type ThemeValue = {
@@ -53,6 +94,7 @@ type ThemeValue = {
   setPreference: (preference: ThemePreference) => void;
   scheme: 'light' | 'dark';
   colors: Colors;
+  paperTheme: MD3Theme;
 };
 
 const ThemeContext = createContext<ThemeValue | null>(null);
@@ -82,6 +124,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       },
       scheme,
       colors: scheme === 'dark' ? darkColors : lightColors,
+      paperTheme: scheme === 'dark' ? darkPaperTheme : lightPaperTheme,
     };
   }, [preference, systemScheme]);
 

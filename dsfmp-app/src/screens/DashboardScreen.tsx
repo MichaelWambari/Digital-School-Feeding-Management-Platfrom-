@@ -1,29 +1,39 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Avatar, Card, Divider, List, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, ThemePreference, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { ROLE_LABELS, useSchool } from '../school/SchoolContext';
-import { FadeIn, PressableScale } from '../components/Motion';
+import { FadeIn } from '../components/Motion';
+import { Chip, IconButton, ListItem, SegmentedButtons } from '../components/Paper';
 
+// Icons are Material Community Icons names (https://pictogrammers.com/library/mdi/).
 const MENU_ITEMS = [
-  { label: 'Students', screen: 'Students', available: true },
-  { label: 'Attendance', screen: 'Attendance', available: true },
-  { label: 'Inventory', screen: 'Inventory', available: true },
-  { label: 'Distribution', screen: 'Distribution', available: true },
-  { label: 'Reports', screen: 'Reports', available: true },
+  { label: 'Students', screen: 'Students', icon: 'account-school-outline', available: true },
+  { label: 'Attendance', screen: 'Attendance', icon: 'clipboard-check-outline', available: true },
+  { label: 'Inventory', screen: 'Inventory', icon: 'package-variant-closed', available: true },
+  { label: 'Distribution', screen: 'Distribution', icon: 'truck-delivery-outline', available: true },
+  { label: 'Reports', screen: 'Reports', icon: 'chart-box-outline', available: true },
 ];
 
 // Only network admins manage staff logins.
-const NETWORK_MENU_ITEMS = [{ label: 'Staff', screen: 'Staff', available: true }];
-
-const THEME_OPTIONS: { key: ThemePreference; label: string }[] = [
-  { key: 'system', label: 'System' },
-  { key: 'light', label: 'Light' },
-  { key: 'dark', label: 'Dark' },
+const NETWORK_MENU_ITEMS = [
+  { label: 'Staff', screen: 'Staff', icon: 'account-key-outline', available: true },
 ];
 
+const THEME_OPTIONS = [
+  { value: 'system', label: 'System', icon: 'theme-light-dark' },
+  { value: 'light', label: 'Light', icon: 'white-balance-sunny' },
+  { value: 'dark', label: 'Dark', icon: 'weather-night' },
+];
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
+}
+
 export default function DashboardScreen({ navigation }: any) {
-  const { styles } = useThemedStyles(makeStyles);
+  const { colors, styles } = useThemedStyles(makeStyles);
   const { preference, setPreference } = useTheme();
   const { profile, isNetworkAdmin, schools, school, setSchoolId } = useSchool();
   const [beneficiaryCount, setBeneficiaryCount] = useState<number | null>(null);
@@ -47,23 +57,31 @@ export default function DashboardScreen({ navigation }: any) {
     await supabase.auth.signOut();
   }
 
+  const menuItems = isNetworkAdmin ? [...MENU_ITEMS, ...NETWORK_MENU_ITEMS] : MENU_ITEMS;
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
+        <Avatar.Text size={44} label={initials(profile.full_name)} />
         <View style={styles.headerMain}>
-          <Text style={styles.headerTitle}>{school.name}</Text>
-          <Text style={styles.headerMeta}>
+          <Text variant="titleLarge" style={styles.headerTitle} numberOfLines={1}>
+            {school.name}
+          </Text>
+          <Text variant="bodySmall" style={styles.headerMeta}>
             {profile.full_name} · {ROLE_LABELS[profile.role]}
           </Text>
         </View>
-        <PressableScale onPress={handleLogout}>
-          <Text style={styles.logout}>Logout</Text>
-        </PressableScale>
+        <IconButton
+          icon="logout"
+          iconColor={colors.danger}
+          onPress={handleLogout}
+          accessibilityLabel="Logout"
+        />
       </View>
 
       {isNetworkAdmin && schools.length > 1 && (
         <>
-          <Text style={styles.sectionLabel}>School</Text>
+          <Text variant="labelLarge" style={styles.sectionLabel}>School</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -71,115 +89,85 @@ export default function DashboardScreen({ navigation }: any) {
             contentContainerStyle={styles.chipsContent}
           >
             {schools.map((s) => (
-              <PressableScale
+              <Chip
                 key={s.school_id}
-                style={[styles.chip, s.school_id === school.school_id && styles.chipActive]}
+                mode={s.school_id === school.school_id ? 'flat' : 'outlined'}
+                selected={s.school_id === school.school_id}
+                showSelectedCheck={false}
+                icon="school-outline"
                 onPress={() => setSchoolId(s.school_id)}
-                accessibilityState={{ selected: s.school_id === school.school_id }}
               >
-                <Text
-                  style={[styles.chipText, s.school_id === school.school_id && styles.chipTextActive]}
-                >
-                  {s.name}
-                </Text>
-              </PressableScale>
+                {s.name}
+              </Chip>
             ))}
           </ScrollView>
         </>
       )}
 
-      <FadeIn style={styles.statCard}>
-        <Text style={styles.statNumber}>{beneficiaryCount ?? '—'}</Text>
-        <Text style={styles.statLabel}>Active students</Text>
+      <FadeIn>
+        <Card mode="contained" style={styles.statCard}>
+          <Card.Content style={styles.statContent}>
+            <Avatar.Icon size={48} icon="account-group-outline" />
+            <View style={styles.statText}>
+              <Text variant="displaySmall" style={styles.statNumber}>
+                {beneficiaryCount ?? '—'}
+              </Text>
+              <Text variant="bodyMedium" style={styles.statLabel}>Active students</Text>
+            </View>
+          </Card.Content>
+        </Card>
       </FadeIn>
 
-      <View style={styles.menu}>
-        {(isNetworkAdmin ? [...MENU_ITEMS, ...NETWORK_MENU_ITEMS] : MENU_ITEMS).map((item, index) => (
+      <Card mode="outlined" style={styles.menu}>
+        {menuItems.map((item, index) => (
           // Menu items fade in one after another.
           <FadeIn key={item.screen} delay={80 + index * 50}>
-            <PressableScale
-              style={[styles.menuItem, !item.available && styles.menuItemDisabled]}
+            {index > 0 && <Divider />}
+            <ListItem
+              title={item.label}
               onPress={() => item.available && navigation.navigate(item.screen)}
               disabled={!item.available}
-              accessibilityState={{ disabled: !item.available }}
-            >
-              <Text style={styles.menuText}>{item.label}</Text>
-              <Text style={styles.chevron}>{item.available ? '›' : 'Coming soon'}</Text>
-            </PressableScale>
+              style={!item.available && styles.menuItemDisabled}
+              left={(props) => <List.Icon {...props} icon={item.icon} color={colors.primary} />}
+              right={(props) =>
+                item.available ? (
+                  <List.Icon {...props} icon="chevron-right" />
+                ) : (
+                  <Text variant="bodySmall" style={styles.comingSoon}>Coming soon</Text>
+                )
+              }
+            />
           </FadeIn>
         ))}
-      </View>
+      </Card>
 
-      <Text style={styles.sectionTitle}>Theme</Text>
-      <View style={styles.segment}>
-        {THEME_OPTIONS.map((option) => (
-          <PressableScale
-            key={option.key}
-            style={[styles.segmentItem, preference === option.key && styles.segmentItemActive]}
-            onPress={() => setPreference(option.key)}
-            accessibilityState={{ selected: preference === option.key }}
-          >
-            <Text
-              style={[styles.segmentText, preference === option.key && styles.segmentTextActive]}
-            >
-              {option.label}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
+      <Text variant="titleSmall" style={styles.sectionTitle}>Theme</Text>
+      <SegmentedButtons
+        value={preference}
+        onValueChange={(value) => setPreference(value as ThemePreference)}
+        buttons={THEME_OPTIONS}
+      />
     </ScrollView>
   );
 }
 
 const makeStyles = (c: Colors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerMain: { flex: 1, marginRight: 12 },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: c.text },
-  headerMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  logout: { color: c.danger, fontSize: 14 },
-  sectionLabel: { fontSize: 13, color: c.textSecondary, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: c.background },
+  content: { padding: 20, paddingBottom: 32 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  headerMain: { flex: 1, marginHorizontal: 12 },
+  headerTitle: { fontWeight: '700', color: c.text },
+  headerMeta: { color: c.textMuted, marginTop: 2 },
+  sectionLabel: { color: c.textSecondary, marginBottom: 8 },
   chips: { flexGrow: 0, marginBottom: 20 },
   chipsContent: { gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  chipActive: { backgroundColor: c.primary, borderColor: c.primary },
-  chipText: { fontSize: 14, color: c.text },
-  chipTextActive: { color: c.onPrimary, fontWeight: '600' },
-  statCard: {
-    backgroundColor: c.surface,
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 24,
-  },
-  statNumber: { fontSize: 32, fontWeight: '700', color: c.text },
-  statLabel: { fontSize: 13, color: c.textMuted, marginTop: 4 },
-  menu: { borderTopWidth: 1, borderTopColor: c.divider },
-  menuItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-  },
+  statCard: { borderRadius: 16, marginBottom: 20 },
+  statContent: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  statText: { marginLeft: 16 },
+  statNumber: { fontWeight: '700', color: c.text },
+  statLabel: { color: c.textMuted },
+  menu: { borderRadius: 16, overflow: 'hidden' },
   menuItemDisabled: { opacity: 0.55 },
-  menuText: { fontSize: 16, color: c.text },
-  chevron: { fontSize: 20, color: c.textFaint },
-  sectionTitle: { fontSize: 15, fontWeight: '600', color: c.text, marginTop: 28, marginBottom: 10 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
+  comingSoon: { color: c.textFaint, alignSelf: 'center' },
+  sectionTitle: { color: c.text, marginTop: 28, marginBottom: 10 },
 });

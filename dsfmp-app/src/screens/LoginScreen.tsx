@@ -1,22 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
+import { Avatar, Divider, HelperText, Surface, Text, TextInput } from 'react-native-paper';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
-import { PressableScale } from '../components/Motion';
+import { FadeIn } from '../components/Motion';
+import { Button } from '../components/Paper';
 
 export default function LoginScreen() {
-  const { colors, styles } = useThemedStyles(makeStyles);
+  const { styles } = useThemedStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState<'password' | 'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,60 +88,81 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>DSFMP</Text>
-      <Text style={styles.subtitle}>Digital School Feeding Management Platform</Text>
+      <FadeIn style={styles.content}>
+        <View style={styles.brand}>
+          <Avatar.Icon size={64} icon="silverware-fork-knife" />
+          <Text variant="headlineMedium" style={styles.title}>DSFMP</Text>
+          <Text variant="bodyMedium" style={styles.subtitle}>
+            Digital School Feeding Management Platform
+          </Text>
+        </View>
 
-      <Text style={styles.label}>Email</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
-        placeholder="you@school.ac.ke"
-        autoCapitalize="none"
-        autoComplete="email"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
+        <Surface style={styles.card} elevation={1}>
+          <TextInput
+            mode="outlined"
+            label="Email"
+            placeholder="you@school.ac.ke"
+            left={<TextInput.Icon icon="email-outline" />}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <TextInput
+            mode="outlined"
+            label="Password"
+            style={styles.passwordInput}
+            left={<TextInput.Icon icon="lock-outline" />}
+            right={
+              <TextInput.Icon
+                icon={showPassword ? 'eye-off' : 'eye'}
+                onPress={() => setShowPassword((shown) => !shown)}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              />
+            }
+            secureTextEntry={!showPassword}
+            autoComplete="current-password"
+            value={password}
+            onChangeText={setPassword}
+            onSubmitEditing={handleLogin}
+            error={!!error}
+          />
+          <HelperText type="error" visible={!!error}>
+            {error}
+          </HelperText>
 
-      <Text style={styles.label}>Password</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
-        placeholder="••••••••"
-        secureTextEntry
-        autoComplete="current-password"
-        value={password}
-        onChangeText={setPassword}
-        onSubmitEditing={handleLogin}
-      />
+          <Button
+            mode="contained"
+            onPress={handleLogin}
+            loading={loading === 'password'}
+            disabled={loading !== null}
+            contentStyle={styles.buttonContent}
+          >
+            Login
+          </Button>
 
-      {error && <Text style={styles.error}>{error}</Text>}
+          <View style={styles.dividerRow}>
+            <Divider style={styles.dividerLine} />
+            <Text variant="bodySmall" style={styles.dividerText}>or</Text>
+            <Divider style={styles.dividerLine} />
+          </View>
 
-      <PressableScale style={styles.button} onPress={handleLogin} disabled={loading !== null}>
-        {loading === 'password' ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={styles.buttonText}>Login</Text>
-        )}
-      </PressableScale>
-
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      <PressableScale style={styles.googleButton} onPress={handleGoogle} disabled={loading !== null}>
-        {loading === 'google' ? (
-          <ActivityIndicator color={colors.text} />
-        ) : (
-          <>
-            <Text style={styles.googleMark}>G</Text>
-            <Text style={styles.googleText}>Continue with Google</Text>
-          </>
-        )}
-      </PressableScale>
-      <Text style={styles.hint}>Use the Google account with the email your network admin added.</Text>
+          <Button
+            mode="outlined"
+            icon="google"
+            onPress={handleGoogle}
+            loading={loading === 'google'}
+            disabled={loading !== null}
+            contentStyle={styles.buttonContent}
+          >
+            Continue with Google
+          </Button>
+          <Text variant="bodySmall" style={styles.hint}>
+            Use the Google account with the email your network admin added.
+          </Text>
+        </Surface>
+      </FadeIn>
     </View>
   );
 }
@@ -171,41 +188,16 @@ function describeAuthError(message: string) {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: c.background },
-  title: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 4, color: c.text },
-  subtitle: { fontSize: 13, color: c.textMuted, textAlign: 'center', marginBottom: 32 },
-  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: c.text,
-  },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    marginTop: 28,
-    alignItems: 'center',
-  },
-  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: c.divider },
-  dividerText: { fontSize: 13, color: c.textMuted, marginHorizontal: 12 },
-  googleButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingVertical: 13,
-    minHeight: 50,
-  },
-  googleMark: { fontSize: 18, fontWeight: '700', color: c.primary, marginRight: 10 },
-  googleText: { fontSize: 15, fontWeight: '600', color: c.text },
-  hint: { fontSize: 12, color: c.textMuted, textAlign: 'center', marginTop: 10 },
+  // Keeps the form a comfortable width on tablets and the web.
+  content: { width: '100%', maxWidth: 420, alignSelf: 'center' },
+  brand: { alignItems: 'center', marginBottom: 28 },
+  title: { fontWeight: '700', marginTop: 14, color: c.text },
+  subtitle: { color: c.textMuted, textAlign: 'center', marginTop: 4 },
+  card: { borderRadius: 16, padding: 20 },
+  passwordInput: { marginTop: 12 },
+  buttonContent: { paddingVertical: 6 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
+  dividerLine: { flex: 1 },
+  dividerText: { color: c.textMuted, marginHorizontal: 12 },
+  hint: { color: c.textMuted, textAlign: 'center', marginTop: 12 },
 });
