@@ -1,17 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { Divider, HelperText, Searchbar, Text, TextInput } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import { FadeInScrollView, PressableScale } from '../components/Motion';
+import { FadeInScrollView } from '../components/Motion';
+import { Button, ListItem, SegmentedButtons } from '../components/Paper';
+import { EmptyText, Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -144,83 +139,71 @@ export default function StudentsScreen({ navigation }: any) {
 
   if (editing) {
     return (
-      <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <PressableScale onPress={() => setEditing(null)} disabled={saving}>
-            <Text style={styles.back}>‹ Cancel</Text>
-          </PressableScale>
-          <Text style={styles.headerTitle}>
-            {editing === 'new' ? 'Add student' : 'Edit student'}
-          </Text>
-          <View style={styles.headerSpacer} />
-        </View>
+      <FadeInScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ScreenHeader
+          title={editing === 'new' ? 'Add student' : 'Edit student'}
+          onBack={() => setEditing(null)}
+          backLabel="Cancel"
+          backDisabled={saving}
+        />
 
-        <Text style={styles.label}>Full name *</Text>
-        <TextInput
-          style={styles.input}
-          placeholderTextColor={colors.placeholder}
+        <Field
+          label="Full name *"
           value={form.full_name}
           onChangeText={(full_name) => setForm({ ...form, full_name })}
           placeholder="e.g. Jane Wanjiku"
         />
-
-        <Text style={styles.label}>Admission number *</Text>
-        <TextInput
-          style={styles.input}
-          placeholderTextColor={colors.placeholder}
+        <Field
+          label="Admission number *"
           value={form.admission_no}
           onChangeText={(admission_no) => setForm({ ...form, admission_no })}
           autoCapitalize="characters"
           placeholder="e.g. ADM-1024"
         />
-
-        <Text style={styles.label}>Age</Text>
-        <TextInput
-          style={styles.input}
-          placeholderTextColor={colors.placeholder}
+        <Field
+          label="Age"
           value={form.age}
           onChangeText={(age) => setForm({ ...form, age })}
           keyboardType="number-pad"
           placeholder="Optional"
         />
-
-        <Text style={styles.label}>NFC tag ID</Text>
-        <TextInput
-          style={styles.input}
-          placeholderTextColor={colors.placeholder}
+        <Field
+          label="NFC tag ID"
           value={form.nfc_tag_id}
           onChangeText={(nfc_tag_id) => setForm({ ...form, nfc_tag_id })}
           autoCapitalize="characters"
           placeholder="Card UID, optional"
+          left={<TextInput.Icon icon="nfc-variant" />}
         />
 
-        <Text style={styles.label}>Status</Text>
-        <View style={styles.segment}>
-          {(['active', 'inactive'] as const).map((status) => (
-            <PressableScale
-              key={status}
-              style={[styles.segmentItem, form.status === status && styles.segmentItemActive]}
-              onPress={() => setForm({ ...form, status })}
-              accessibilityState={{ selected: form.status === status }}
-            >
-              <Text
-                style={[styles.segmentText, form.status === status && styles.segmentTextActive]}
-              >
-                {status === 'active' ? 'Active' : 'Inactive'}
-              </Text>
-            </PressableScale>
-          ))}
-        </View>
+        <Text variant="labelLarge" style={styles.label}>Status</Text>
+        <SegmentedButtons
+          value={form.status}
+          onValueChange={(status) => setForm({ ...form, status: status as FormState['status'] })}
+          buttons={[
+            { value: 'active', label: 'Active', icon: 'check-circle-outline' },
+            { value: 'inactive', label: 'Inactive', icon: 'pause-circle-outline' },
+          ]}
+        />
 
-        {formError && <Text style={styles.error}>{formError}</Text>}
+        <HelperText type="error" visible={!!formError}>
+          {formError}
+        </HelperText>
 
-        <PressableScale style={styles.button} onPress={handleSave} disabled={saving}>
-          {saving ? (
-            <ActivityIndicator color={colors.onPrimary} />
-          ) : (
-            <Text style={styles.buttonText}>Save</Text>
-          )}
-        </PressableScale>
+        <Button
+          mode="contained"
+          onPress={handleSave}
+          loading={saving}
+          disabled={saving}
+          contentStyle={styles.buttonContent}
+          style={styles.saveButton}
+        >
+          Save
+        </Button>
       </FadeInScrollView>
     );
   }
@@ -235,66 +218,71 @@ export default function StudentsScreen({ navigation }: any) {
     : beneficiaries;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Students</Text>
-        {isNetworkAdmin ? (
-          <View style={styles.headerSpacer} />
-        ) : (
-          <PressableScale onPress={() => openForm('new')}>
-            <Text style={styles.add}>+ Add</Text>
-          </PressableScale>
-        )}
-      </View>
+    <View style={[styles.container, styles.content]}>
+      <ScreenHeader
+        title="Students"
+        onBack={() => navigation.goBack()}
+        right={
+          !isNetworkAdmin && (
+            <Button mode="text" icon="plus" onPress={() => openForm('new')}>
+              Add
+            </Button>
+          )
+        }
+      />
 
       {isNetworkAdmin && (
-        <Text style={styles.viewOnly}>View only. {school.name}'s staff manage its students.</Text>
+        <Text variant="bodySmall" style={styles.viewOnly}>
+          View only. {school.name}'s staff manage its students.
+        </Text>
       )}
 
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Searchbar
         value={search}
         onChangeText={setSearch}
         placeholder="Search by name or admission no."
         autoCapitalize="none"
+        elevation={0}
+        style={styles.search}
       />
 
-      {loadError && <Text style={styles.error}>Could not load students: {loadError}</Text>}
+      {loadError && (
+        <HelperText type="error">Could not load students: {loadError}</HelperText>
+      )}
 
       <FlatList
         style={styles.list}
         data={filtered}
         keyExtractor={(b) => b.beneficiary_id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadBeneficiaries} />}
+        ItemSeparatorComponent={Divider}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadBeneficiaries} tintColor={colors.primary} />
+        }
         ListEmptyComponent={
-          loading ? null : (
-            <Text style={styles.empty}>
-              {term ? 'No students match your search.' : 'No students yet.'}
-            </Text>
+          loading ? undefined : (
+            <EmptyText>{term ? 'No students match your search.' : 'No students yet.'}</EmptyText>
           )
         }
         renderItem={({ item }) => (
-          <PressableScale
-            style={styles.row}
+          <ListItem
+            title={item.full_name}
+            description={
+              item.admission_no +
+              (item.age !== null ? ` · Age ${item.age}` : '') +
+              (item.nfc_tag_id ? ' · NFC linked' : '')
+            }
             onPress={() => openForm(item)}
             disabled={isNetworkAdmin}
-          >
-            <View style={styles.rowMain}>
-              <Text style={styles.rowName}>{item.full_name}</Text>
-              <Text style={styles.rowMeta}>
-                {item.admission_no}
-                {item.age !== null ? ` · Age ${item.age}` : ''}
-                {item.nfc_tag_id ? ' · NFC linked' : ''}
-              </Text>
-            </View>
-            <Text style={[styles.badge, item.status === 'inactive' && styles.badgeInactive]}>
-              {item.status}
-            </Text>
-          </PressableScale>
+            style={styles.row}
+            contentStyle={styles.rowContent}
+            right={() => (
+              <StatusPill
+                label={item.status}
+                tone={item.status === 'active' ? 'success' : 'muted'}
+                style={styles.pill}
+              />
+            )}
+          />
         )}
       />
     </View>
@@ -314,63 +302,15 @@ function describeError(error: { code?: string; message: string }) {
 }
 
 const makeStyles = (c: Colors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  back: { color: c.primary, fontSize: 15 },
-  add: { color: c.primary, fontSize: 15, fontWeight: '600' },
-  viewOnly: { fontSize: 13, color: c.textMuted, marginBottom: 12 },
-  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: c.text,
-  },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    marginTop: 28,
-    marginBottom: 40,
-    alignItems: 'center',
-  },
-  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
+  container: { flex: 1, backgroundColor: c.background },
+  content: { padding: 20 },
+  viewOnly: { color: c.textMuted, marginBottom: 12 },
+  label: { color: c.textSecondary, marginTop: 16, marginBottom: 8 },
+  buttonContent: { paddingVertical: 6 },
+  saveButton: { marginTop: 8, marginBottom: 40 },
+  search: { backgroundColor: c.surface },
   list: { marginTop: 12 },
-  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 16, color: c.text },
-  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  badge: {
-    fontSize: 12,
-    color: c.successText,
-    backgroundColor: c.successBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  badgeInactive: { color: c.textMuted, backgroundColor: c.surface },
+  row: { paddingRight: 0 },
+  rowContent: { paddingLeft: 0 },
+  pill: { alignSelf: 'center' },
 });

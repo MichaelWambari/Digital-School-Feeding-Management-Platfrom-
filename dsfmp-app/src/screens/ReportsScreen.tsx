@@ -1,15 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { Card, Divider, HelperText, List, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import { PressableScale } from '../components/Motion';
+import { SegmentedButtons } from '../components/Paper';
+import { ScreenHeader, StatusPill } from '../components/ScreenParts';
 
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
@@ -82,7 +78,7 @@ async function fetchAllRows<T>(
 }
 
 export default function ReportsScreen({ navigation }: any) {
-  const { styles } = useThemedStyles(makeStyles);
+  const { colors, styles } = useThemedStyles(makeStyles);
   const { school, schools, isNetworkAdmin } = useSchool();
   // Network admins can report on the selected school or the whole network.
   const [scope, setScope] = useState<'school' | 'all'>('school');
@@ -204,153 +200,153 @@ export default function ReportsScreen({ navigation }: any) {
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadReport} />}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={loadReport} tintColor={colors.primary} />
+      }
     >
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Reports</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ScreenHeader title="Reports" onBack={() => navigation.goBack()} />
 
-      <View style={styles.segment}>
-        {RANGES.map((r) => (
-          <PressableScale
-            key={r.key}
-            style={[styles.segmentItem, range === r.key && styles.segmentItemActive]}
-            onPress={() => setRange(r.key)}
-            accessibilityState={{ selected: range === r.key }}
-          >
-            <Text style={[styles.segmentText, range === r.key && styles.segmentTextActive]}>
-              {r.label}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
+      <SegmentedButtons
+        value={range}
+        onValueChange={(r) => setRange(r as RangeKey)}
+        buttons={RANGES.map((r) => ({ value: r.key, label: r.label }))}
+      />
 
       {isNetworkAdmin && schools.length > 1 && (
-        <View style={[styles.segment, styles.scopeSegment]}>
-          {(['school', 'all'] as const).map((s) => (
-            <PressableScale
-              key={s}
-              style={[styles.segmentItem, scope === s && styles.segmentItemActive]}
-              onPress={() => setScope(s)}
-              accessibilityState={{ selected: scope === s }}
-            >
-              <Text style={[styles.segmentText, scope === s && styles.segmentTextActive]}>
-                {s === 'school' ? school.name : 'All schools'}
-              </Text>
-            </PressableScale>
-          ))}
-        </View>
+        <SegmentedButtons
+          style={styles.scopeSegment}
+          value={scope}
+          onValueChange={(s) => setScope(s as typeof scope)}
+          buttons={[
+            { value: 'school', label: school.name, icon: 'school-outline' },
+            { value: 'all', label: 'All schools', icon: 'domain' },
+          ]}
+        />
       )}
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <HelperText type="error">{error}</HelperText>}
 
       {/* ---------------- Attendance ---------------- */}
-      <Text style={styles.sectionTitle}>Meal attendance</Text>
+      <Text variant="titleMedium" style={styles.sectionTitle}>Meal attendance</Text>
       <View style={styles.tiles}>
         {MEALS.map((m) => (
-          <View key={m.key} style={styles.tile}>
-            <Text style={styles.tileNumber}>{mealTotals[m.key].toLocaleString()}</Text>
-            <Text style={styles.tileLabel}>{m.label}</Text>
-            {activeCount > 0 && (
-              <Text style={styles.tileMeta}>
-                {Math.round((mealTotals[m.key] / (activeCount * rangeDays)) * 100)}% avg
+          <Card key={m.key} mode="contained" style={styles.tile}>
+            <Card.Content style={styles.tileContent}>
+              <View style={[styles.tileSwatch, { backgroundColor: m.color }]} />
+              <Text variant="headlineSmall" style={styles.tileNumber}>
+                {mealTotals[m.key].toLocaleString()}
               </Text>
-            )}
-          </View>
+              <Text variant="bodySmall" style={styles.tileLabel}>{m.label}</Text>
+              {activeCount > 0 && (
+                <Text variant="labelSmall" style={styles.tileMeta}>
+                  {Math.round((mealTotals[m.key] / (activeCount * rangeDays)) * 100)}% avg
+                </Text>
+              )}
+            </Card.Content>
+          </Card>
         ))}
       </View>
-      <Text style={styles.note}>
+      <Text variant="bodySmall" style={styles.note}>
         {totalAttendance.toLocaleString()} meals served · {activeCount} active students. The
         % is the share of active students attending that meal each day, on average.
       </Text>
 
       {rangeDays > 1 && (
-        <View style={styles.card}>
-          <View style={styles.legend}>
-            {MEALS.map((m) => (
-              <View key={m.key} style={styles.legendItem}>
-                <View style={[styles.legendSwatch, { backgroundColor: m.color }]} />
-                <Text style={styles.legendText}>{m.label}</Text>
+        <Card mode="outlined" style={styles.card}>
+          <Card.Content>
+            <View style={styles.legend}>
+              {MEALS.map((m) => (
+                <View key={m.key} style={styles.legendItem}>
+                  <View style={[styles.legendSwatch, { backgroundColor: m.color }]} />
+                  <Text variant="labelSmall" style={styles.legendText}>{m.label}</Text>
+                </View>
+              ))}
+            </View>
+            {days.map((day) => (
+              <View key={day.date} style={styles.barRow}>
+                <Text variant="labelSmall" style={styles.barLabel}>{formatDay(day.date)}</Text>
+                <View style={styles.barTrack}>
+                  {MEALS.map((m) =>
+                    day.counts[m.key] > 0 ? (
+                      <View
+                        key={m.key}
+                        style={{
+                          width: `${(day.counts[m.key] / busiestDay) * 100}%`,
+                          backgroundColor: m.color,
+                        }}
+                      />
+                    ) : null
+                  )}
+                </View>
+                <Text variant="labelSmall" style={styles.barValue}>{day.total}</Text>
               </View>
             ))}
-          </View>
-          {days.map((day) => (
-            <View key={day.date} style={styles.barRow}>
-              <Text style={styles.barLabel}>{formatDay(day.date)}</Text>
-              <View style={styles.barTrack}>
-                {MEALS.map((m) =>
-                  day.counts[m.key] > 0 ? (
-                    <View
-                      key={m.key}
-                      style={{
-                        width: `${(day.counts[m.key] / busiestDay) * 100}%`,
-                        backgroundColor: m.color,
-                      }}
-                    />
-                  ) : null
-                )}
-              </View>
-              <Text style={styles.barValue}>{day.total}</Text>
-            </View>
-          ))}
-        </View>
+          </Card.Content>
+        </Card>
       )}
 
       {/* ---------------- Food used ---------------- */}
-      <Text style={styles.sectionTitle}>Food used</Text>
+      <Text variant="titleMedium" style={styles.sectionTitle}>Food used</Text>
       {used.length === 0 ? (
-        <Text style={styles.empty}>No food used in this period.</Text>
+        <Text variant="bodyMedium" style={styles.empty}>No food used in this period.</Text>
       ) : (
-        <View style={styles.card}>
-          {used.map((e) => (
-            <View key={e.item.item_id} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName}>{e.item.item_name}</Text>
-                <Text style={styles.rowMeta}>
-                  {allSchools ? `${schoolName(e.item.school_id)} · ` : ''}
-                  used at {e.meals.toLocaleString()} {e.meals === 1 ? 'meal' : 'meals'}
-                </Text>
-              </View>
-              <Text style={styles.rowValue}>{formatQty(e.quantity, e.item.unit)}</Text>
+        <Card mode="outlined" style={styles.card}>
+          {used.map((e, index) => (
+            <View key={e.item.item_id}>
+              {index > 0 && <Divider />}
+              <List.Item
+                title={e.item.item_name}
+                description={
+                  (allSchools ? `${schoolName(e.item.school_id)} · ` : '') +
+                  `used at ${e.meals.toLocaleString()} ${e.meals === 1 ? 'meal' : 'meals'}`
+                }
+                right={() => (
+                  <Text variant="titleSmall" style={styles.rowValue}>
+                    {formatQty(e.quantity, e.item.unit)}
+                  </Text>
+                )}
+              />
             </View>
           ))}
-        </View>
+        </Card>
       )}
 
       {/* ---------------- Stock ---------------- */}
-      <Text style={styles.sectionTitle}>Current stock</Text>
-      <Text style={styles.note}>
+      <Text variant="titleMedium" style={styles.sectionTitle}>Current stock</Text>
+      <Text variant="bodySmall" style={[styles.note, styles.stockNote]}>
         {lowStock.length === 0
           ? 'No items are low on stock.'
           : `${lowStock.length} ${lowStock.length === 1 ? 'item is' : 'items are'} at or below the reorder level.`}
       </Text>
       {items.length === 0 ? (
-        <Text style={styles.empty}>No inventory items yet.</Text>
+        <Text variant="bodyMedium" style={styles.empty}>No inventory items yet.</Text>
       ) : (
-        <View style={styles.card}>
-          {items.map((i) => {
+        <Card mode="outlined" style={styles.card}>
+          {items.map((i, index) => {
             const low = lowStock.includes(i);
             return (
-              <View key={i.item_id} style={styles.row}>
-                <View style={styles.rowMain}>
-                  <Text style={styles.rowName}>{i.item_name}</Text>
-                  <Text style={styles.rowMeta}>
-                    {allSchools ? `${schoolName(i.school_id)} · ` : ''}
-                    Reorder at {formatQty(i.reorder_level ?? 0, i.unit)}
-                  </Text>
-                </View>
-                <Text style={[styles.rowValue, low && styles.lowValue]}>
-                  {formatQty(i.quantity_available, i.unit)}
-                  {low ? ' · Low' : ''}
-                </Text>
+              <View key={i.item_id}>
+                {index > 0 && <Divider />}
+                <List.Item
+                  title={i.item_name}
+                  description={
+                    (allSchools ? `${schoolName(i.school_id)} · ` : '') +
+                    `Reorder at ${formatQty(i.reorder_level ?? 0, i.unit)}`
+                  }
+                  right={() => (
+                    <View style={styles.rowRight}>
+                      <Text variant="titleSmall" style={styles.rowValue}>
+                        {formatQty(i.quantity_available, i.unit)}
+                      </Text>
+                      {low && <StatusPill label="Low" tone="warning" style={styles.lowPill} />}
+                    </View>
+                  )}
+                />
               </View>
             );
           })}
-        </View>
+        </Card>
       )}
       <View style={styles.bottomSpacer} />
     </ScrollView>
@@ -358,44 +354,26 @@ export default function ReportsScreen({ navigation }: any) {
 }
 
 const makeStyles = (c: Colors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  back: { color: c.primary, fontSize: 15 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
+  container: { flex: 1, backgroundColor: c.background },
+  content: { padding: 20 },
   scopeSegment: { marginTop: 10 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginTop: 28, marginBottom: 10, color: c.text },
+  sectionTitle: { fontWeight: '700', marginTop: 28, marginBottom: 10, color: c.text },
   tiles: { flexDirection: 'row', gap: 8 },
-  tile: { flex: 1, backgroundColor: c.surface, borderRadius: 12, padding: 12 },
-  tileNumber: { fontSize: 22, fontWeight: '700', color: c.text },
-  tileLabel: { fontSize: 13, color: c.textSecondary, marginTop: 2 },
-  tileMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
-  note: { fontSize: 13, color: c.textMuted, marginTop: 10 },
-  card: {
-    borderWidth: 1,
-    borderColor: c.divider,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    marginTop: 12,
-  },
-  legend: { flexDirection: 'row', gap: 14, paddingVertical: 8 },
+  tile: { flex: 1, borderRadius: 16 },
+  tileContent: { paddingHorizontal: 12 },
+  tileSwatch: { width: 18, height: 4, borderRadius: 2, marginBottom: 8 },
+  tileNumber: { fontWeight: '700', color: c.text },
+  tileLabel: { color: c.textSecondary, marginTop: 2 },
+  tileMeta: { color: c.textMuted, marginTop: 2 },
+  note: { color: c.textMuted, marginTop: 10 },
+  stockNote: { marginTop: 0 },
+  card: { borderRadius: 16, marginTop: 12, overflow: 'hidden' },
+  legend: { flexDirection: 'row', gap: 14, paddingBottom: 8 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendSwatch: { width: 10, height: 10, borderRadius: 2 },
-  legendText: { fontSize: 12, color: c.textSecondary },
+  legendText: { color: c.textSecondary },
   barRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
-  barLabel: { width: 92, fontSize: 12, color: c.textSecondary },
+  barLabel: { width: 92, color: c.textSecondary },
   barTrack: {
     flex: 1,
     height: 14,
@@ -404,19 +382,10 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
   },
-  barValue: { width: 40, textAlign: 'right', fontSize: 12, color: c.textSecondary },
-  empty: { color: c.textMuted, fontSize: 14 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: c.surface,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 15, color: c.text },
-  rowMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
-  rowValue: { fontSize: 15, fontWeight: '600', color: c.text },
-  lowValue: { color: c.warningText },
+  barValue: { width: 40, textAlign: 'right', color: c.textSecondary },
+  empty: { color: c.textMuted },
+  rowRight: { alignItems: 'flex-end', justifyContent: 'center' },
+  rowValue: { alignSelf: 'center', fontWeight: '600', color: c.text },
+  lowPill: { alignSelf: 'flex-end', marginTop: 4 },
   bottomSpacer: { height: 40 },
 });

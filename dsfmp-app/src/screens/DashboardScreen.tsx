@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Avatar, Card, Divider, List, Text } from 'react-native-paper';
+import { Avatar, Card, Surface, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, ThemePreference, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { ROLE_LABELS, useSchool } from '../school/SchoolContext';
-import { FadeIn } from '../components/Motion';
-import { Chip, IconButton, ListItem, SegmentedButtons } from '../components/Paper';
+import { FadeIn, PressableScale } from '../components/Motion';
+import { Chip, IconButton, SegmentedButtons } from '../components/Paper';
+import { initials } from '../components/ScreenParts';
 
 // Icons are Material Community Icons names (https://pictogrammers.com/library/mdi/).
 const MENU_ITEMS = [
@@ -27,14 +28,9 @@ const THEME_OPTIONS = [
   { value: 'dark', label: 'Dark', icon: 'weather-night' },
 ];
 
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
-}
-
 export default function DashboardScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { preference, setPreference } = useTheme();
+  const { preference, setPreference, paperTheme } = useTheme();
   const { profile, isNetworkAdmin, schools, school, setSchoolId } = useSchool();
   const [beneficiaryCount, setBeneficiaryCount] = useState<number | null>(null);
 
@@ -118,28 +114,35 @@ export default function DashboardScreen({ navigation }: any) {
         </Card>
       </FadeIn>
 
-      <Card mode="outlined" style={styles.menu}>
+      <View style={styles.grid}>
         {menuItems.map((item, index) => (
-          // Menu items fade in one after another.
-          <FadeIn key={item.screen} delay={80 + index * 50}>
-            {index > 0 && <Divider />}
-            <ListItem
-              title={item.label}
+          // Tiles fade in one after another.
+          <FadeIn key={item.screen} delay={80 + index * 50} style={styles.gridCell}>
+            <PressableScale
               onPress={() => item.available && navigation.navigate(item.screen)}
               disabled={!item.available}
-              style={!item.available && styles.menuItemDisabled}
-              left={(props) => <List.Icon {...props} icon={item.icon} color={colors.primary} />}
-              right={(props) =>
-                item.available ? (
-                  <List.Icon {...props} icon="chevron-right" />
-                ) : (
-                  <Text variant="bodySmall" style={styles.comingSoon}>Coming soon</Text>
-                )
-              }
-            />
+              accessibilityRole="button"
+              accessibilityLabel={item.available ? item.label : `${item.label}, coming soon`}
+              accessibilityState={{ disabled: !item.available }}
+            >
+              <Surface style={[styles.tile, !item.available && styles.tileDisabled]} elevation={1}>
+                <Avatar.Icon
+                  size={52}
+                  icon={item.icon}
+                  color={paperTheme.colors.onPrimaryContainer}
+                  style={{ backgroundColor: paperTheme.colors.primaryContainer }}
+                />
+                <Text variant="labelLarge" style={styles.tileLabel} numberOfLines={1}>
+                  {item.label}
+                </Text>
+                {!item.available && (
+                  <Text variant="labelSmall" style={styles.comingSoon}>Coming soon</Text>
+                )}
+              </Surface>
+            </PressableScale>
           </FadeIn>
         ))}
-      </Card>
+      </View>
 
       <Text variant="titleSmall" style={styles.sectionTitle}>Theme</Text>
       <SegmentedButtons
@@ -166,8 +169,12 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   statText: { marginLeft: 16 },
   statNumber: { fontWeight: '700', color: c.text },
   statLabel: { color: c.textMuted },
-  menu: { borderRadius: 16, overflow: 'hidden' },
-  menuItemDisabled: { opacity: 0.55 },
-  comingSoon: { color: c.textFaint, alignSelf: 'center' },
+  // Three tiles per row; the negative margin cancels the cells' outer padding.
+  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -6 },
+  gridCell: { width: '33.333%', padding: 6 },
+  tile: { borderRadius: 16, paddingVertical: 18, paddingHorizontal: 8, alignItems: 'center' },
+  tileDisabled: { opacity: 0.55 },
+  tileLabel: { color: c.text, marginTop: 10, textAlign: 'center' },
+  comingSoon: { color: c.textFaint, marginTop: 2 },
   sectionTitle: { color: c.text, marginTop: 28, marginBottom: 10 },
 });

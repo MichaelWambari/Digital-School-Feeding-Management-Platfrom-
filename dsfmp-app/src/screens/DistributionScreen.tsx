@@ -1,17 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, RefreshControl } from 'react-native';
+import { Card, Divider, HelperText, List, Text, TextInput } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import NetworkDistributionScreen from './NetworkDistributionScreen';
-import { FadeInScrollView, PressableScale } from '../components/Motion';
+import { FadeInScrollView } from '../components/Motion';
+import { Button, Chip, SegmentedButtons } from '../components/Paper';
+import { Field, ScreenHeader, StatCard } from '../components/ScreenParts';
 
 // A school's side of food distribution: food received from the central
 // store, and food used at each meal.
@@ -83,28 +79,16 @@ function SchoolDistributionScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.link}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Distribution</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ScreenHeader title="Distribution" onBack={() => navigation.goBack()} />
 
-      <View style={styles.segment}>
-        {(['usage', 'deliveries'] as const).map((t) => (
-          <PressableScale
-            key={t}
-            style={[styles.segmentItem, tab === t && styles.segmentItemActive]}
-            onPress={() => setTab(t)}
-            accessibilityState={{ selected: tab === t }}
-          >
-            <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
-              {t === 'usage' ? 'Food used' : 'Received from source'}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
+      <SegmentedButtons
+        value={tab}
+        onValueChange={(t) => setTab(t as typeof tab)}
+        buttons={[
+          { value: 'usage', label: 'Food used', icon: 'silverware-fork-knife' },
+          { value: 'deliveries', label: 'Received from source', icon: 'truck-outline' },
+        ]}
+      />
 
       {tab === 'usage' ? <UsageTab /> : <DeliveriesTab />}
     </View>
@@ -271,120 +255,124 @@ function UsageTab() {
     <FadeInScrollView
       style={styles.tabBody}
       keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />
+      }
     >
       <View style={styles.chipRow}>
         {([0, 1] as const).map((d) => (
-          <PressableScale
+          <Chip
             key={d}
-            style={[styles.chip, daysAgo === d && styles.chipActive]}
+            mode={daysAgo === d ? 'flat' : 'outlined'}
+            selected={daysAgo === d}
+            showSelectedCheck={false}
+            icon="calendar-outline"
             onPress={() => setDaysAgo(d)}
-            accessibilityState={{ selected: daysAgo === d }}
           >
-            <Text style={[styles.chipText, daysAgo === d && styles.chipTextActive]}>
-              {d === 0 ? 'Today' : 'Yesterday'}
-            </Text>
-          </PressableScale>
+            {d === 0 ? 'Today' : 'Yesterday'}
+          </Chip>
         ))}
       </View>
 
-      <View style={styles.segment}>
-        {servedMeals.map((meal) => (
-          <PressableScale
-            key={meal}
-            style={[styles.segmentItem, mealType === meal && styles.segmentItemActive]}
-            onPress={() => setMealType(meal)}
-            accessibilityState={{ selected: mealType === meal }}
-          >
-            <Text style={[styles.segmentText, mealType === meal && styles.segmentTextActive]}>
-              {MEAL_LABELS[meal]}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
+      <SegmentedButtons
+        value={mealType}
+        onValueChange={(meal) => setMealType(meal as MealType)}
+        buttons={servedMeals.map((meal) => ({ value: meal, label: MEAL_LABELS[meal] }))}
+      />
 
-      <View style={styles.summary}>
-        <Text style={styles.summaryNumber}>{fed ?? '—'}</Text>
-        <Text style={styles.summaryLabel}>
-          students at {MEAL_LABELS[mealType].toLowerCase()} · {formatDay(date)}
-        </Text>
-      </View>
+      <StatCard
+        style={styles.summary}
+        value={fed ?? '—'}
+        label={`students at ${MEAL_LABELS[mealType].toLowerCase()} · ${formatDay(date)}`}
+      />
 
       {!loading && items.length === 0 ? (
-        <Text style={styles.emptyLeft}>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>
           No food in stock yet. Confirm a delivery under "Received from source" first.
         </Text>
       ) : (
-        items.map((item) => {
+        items.map((item, index) => {
           const recorded = recordedForMeal.get(item.item_id);
           const unit = item.food_items.unit;
           return (
-            <View key={item.item_id} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName}>{item.food_items.item_name}</Text>
-                <Text style={styles.rowMeta}>
-                  {formatQty(item.quantity_available, unit)} in stock
-                  {recorded
+            <View key={item.item_id}>
+              {index > 0 && <Divider />}
+              <List.Item
+                title={item.food_items.item_name}
+                description={
+                  `${formatQty(item.quantity_available, unit)} in stock` +
+                  (recorded
                     ? ` · ${formatQty(recorded, unit)} used` +
                       (fed ? ` (${formatQty(recorded / fed, unit)} per student)` : '')
-                    : ''}
-                </Text>
-              </View>
-              <TextInput
-                style={[styles.input, styles.amountInput]}
-                placeholderTextColor={colors.placeholder}
-                value={amounts[item.item_id] ?? ''}
-                onChangeText={(text) => {
-                  setAmounts({ ...amounts, [item.item_id]: text });
-                  setConfirming(false);
-                }}
-                keyboardType="decimal-pad"
-                placeholder={unit}
-                accessibilityLabel={`${item.food_items.item_name} used, in ${unit}`}
+                    : '')
+                }
+                descriptionNumberOfLines={3}
+                style={styles.row}
+                contentStyle={styles.rowContent}
+                right={() => (
+                  <TextInput
+                    mode="outlined"
+                    dense
+                    style={styles.amountInput}
+                    contentStyle={styles.amountText}
+                    value={amounts[item.item_id] ?? ''}
+                    onChangeText={(text) => {
+                      setAmounts({ ...amounts, [item.item_id]: text });
+                      setConfirming(false);
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder={unit}
+                    accessibilityLabel={`${item.food_items.item_name} used, in ${unit}`}
+                  />
+                )}
               />
             </View>
           );
         })
       )}
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      <HelperText type="error" visible={!!error}>
+        {error}
+      </HelperText>
 
       {items.length > 0 && (
-        <PressableScale
-          style={[styles.button, confirming && styles.buttonConfirm]}
+        <Button
+          mode="contained"
+          icon={confirming ? 'check-all' : 'content-save-outline'}
+          buttonColor={confirming ? colors.warning : undefined}
           onPress={handleSave}
+          loading={saving}
           disabled={saving}
+          contentStyle={styles.buttonContent}
+          labelStyle={styles.buttonLabel}
         >
-          {saving ? (
-            <ActivityIndicator color={colors.onPrimary} />
-          ) : (
-            <Text style={styles.buttonText}>
-              {confirming
-                ? `Confirm: ${entries
-                    .map((e) => `${e.item.food_items.item_name} ${formatQty(Number(e.text), e.item.food_items.unit)}`)
-                    .join(', ')}`
-                : `Save food used at ${MEAL_LABELS[mealType].toLowerCase()}`}
-            </Text>
-          )}
-        </PressableScale>
+          {confirming
+            ? `Confirm: ${entries
+                .map((e) => `${e.item.food_items.item_name} ${formatQty(Number(e.text), e.item.food_items.unit)}`)
+                .join(', ')}`
+            : `Save food used at ${MEAL_LABELS[mealType].toLowerCase()}`}
+        </Button>
       )}
 
-      <Text style={styles.sectionTitle}>Food used, last {HISTORY_DAYS} days</Text>
+      <Text variant="titleSmall" style={styles.sectionTitle}>Food used, last {HISTORY_DAYS} days</Text>
       {history.size === 0 ? (
-        <Text style={styles.emptyLeft}>Nothing recorded yet.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>Nothing recorded yet.</Text>
       ) : (
-        [...history.entries()].map(([day, meals]) => (
-          <View key={day} style={styles.historyDay}>
-            <Text style={styles.historyDate}>{formatDay(day)}</Text>
-            {MEAL_TYPES.filter((m) => meals.has(m)).map((m) => (
-              <Text key={m} style={styles.historyLine}>
-                <Text style={styles.historyMeal}>{MEAL_LABELS[m]}: </Text>
-                {meals
-                  .get(m)!
-                  .map((u) => `${u.item.food_items.item_name} ${formatQty(u.quantity, u.item.food_items.unit)}`)
-                  .join(', ')}
-              </Text>
-            ))}
+        [...history.entries()].map(([day, meals], index) => (
+          <View key={day}>
+            {index > 0 && <Divider />}
+            <View style={styles.historyDay}>
+              <Text variant="labelLarge" style={styles.historyDate}>{formatDay(day)}</Text>
+              {MEAL_TYPES.filter((m) => meals.has(m)).map((m) => (
+                <Text key={m} variant="bodyMedium" style={styles.historyLine}>
+                  <Text variant="bodyMedium" style={styles.historyMeal}>{MEAL_LABELS[m]}: </Text>
+                  {meals
+                    .get(m)!
+                    .map((u) => `${u.item.food_items.item_name} ${formatQty(u.quantity, u.item.food_items.unit)}`)
+                    .join(', ')}
+                </Text>
+              ))}
+            </View>
           </View>
         ))
       )}
@@ -468,85 +456,113 @@ function DeliveriesTab() {
     <FadeInScrollView
       style={styles.tabBody}
       keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadDeliveries} />}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={loadDeliveries} tintColor={colors.primary} />
+      }
     >
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <HelperText type="error">{error}</HelperText>}
 
-      <Text style={styles.sectionTitle}>On the way</Text>
+      <Text variant="titleSmall" style={[styles.sectionTitle, styles.firstSection]}>On the way</Text>
       {inTransit.length === 0 ? (
-        <Text style={styles.emptyLeft}>No deliveries on the way.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>No deliveries on the way.</Text>
       ) : (
         inTransit.map((d) => {
           const unit = d.food_items.unit;
           const isConfirming = confirmId === d.distribution_id;
           return (
-            <View key={d.distribution_id} style={styles.card}>
-              <Text style={styles.rowName}>
-                {d.food_items.item_name} · {formatQty(d.quantity_dispatched, unit)}
-              </Text>
-              <Text style={styles.rowMeta}>Sent {formatDay(d.dispatch_date)}</Text>
-              {!canConfirm ? (
-                <Text style={styles.rowMeta}>An admin or inventory officer confirms it on arrival.</Text>
-              ) : isConfirming ? (
-                <>
-                  <Text style={styles.label}>Amount that arrived ({unit})</Text>
-                  <View style={styles.inlineRow}>
-                    <TextInput
-                      style={[styles.input, styles.inlineInput]}
-                      placeholderTextColor={colors.placeholder}
-                      value={received}
-                      onChangeText={setReceived}
-                      keyboardType="decimal-pad"
-                    />
-                    <PressableScale
-                      style={styles.inlineButton}
-                      onPress={() => handleConfirm(d)}
+            <Card key={d.distribution_id} mode="contained" style={styles.card}>
+              <Card.Title
+                title={`${d.food_items.item_name} · ${formatQty(d.quantity_dispatched, unit)}`}
+                subtitle={`Sent ${formatDay(d.dispatch_date)}`}
+                left={(props) => <List.Icon {...props} icon="truck-fast-outline" color={colors.primary} />}
+              />
+              <Card.Content>
+                {!canConfirm ? (
+                  <Text variant="bodySmall" style={styles.meta}>
+                    An admin or inventory officer confirms it on arrival.
+                  </Text>
+                ) : isConfirming ? (
+                  <>
+                    <View style={styles.inlineRow}>
+                      <Field
+                        label={`Amount that arrived (${unit})`}
+                        style={styles.inlineInput}
+                        value={received}
+                        onChangeText={setReceived}
+                        keyboardType="decimal-pad"
+                      />
+                      <Button
+                        mode="contained"
+                        onPress={() => handleConfirm(d)}
+                        loading={busy}
+                        disabled={busy}
+                        style={styles.inlineButton}
+                        contentStyle={styles.buttonContent}
+                      >
+                        Confirm
+                      </Button>
+                    </View>
+                    <Button
+                      mode="text"
+                      onPress={() => setConfirmId(null)}
                       disabled={busy}
+                      style={styles.cancelButton}
                     >
-                      {busy ? (
-                        <ActivityIndicator color={colors.onPrimary} />
-                      ) : (
-                        <Text style={styles.inlineButtonText}>Confirm</Text>
-                      )}
-                    </PressableScale>
-                  </View>
-                  <PressableScale onPress={() => setConfirmId(null)} disabled={busy}>
-                    <Text style={styles.cancelLink}>Cancel</Text>
-                  </PressableScale>
-                </>
-              ) : (
-                <PressableScale style={styles.smallButton} onPress={() => startConfirm(d)}>
-                  <Text style={styles.inlineButtonText}>Confirm receipt</Text>
-                </PressableScale>
-              )}
-            </View>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    mode="contained"
+                    icon="package-variant-closed-check"
+                    onPress={() => startConfirm(d)}
+                    style={styles.smallButton}
+                  >
+                    Confirm receipt
+                  </Button>
+                )}
+              </Card.Content>
+            </Card>
           );
         })
       )}
 
-      <Text style={styles.sectionTitle}>Received</Text>
+      <Text variant="titleSmall" style={styles.sectionTitle}>Received</Text>
       {past.length === 0 ? (
-        <Text style={styles.emptyLeft}>Nothing received yet.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>Nothing received yet.</Text>
       ) : (
-        past.map((d) => {
+        past.map((d, index) => {
           const unit = d.food_items.unit;
           const short = d.status === 'received' ? d.quantity_dispatched - (d.quantity_received ?? 0) : 0;
+          const cancelled = d.status === 'cancelled';
           return (
-            <View key={d.distribution_id} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName}>{d.food_items.item_name}</Text>
-                <Text style={styles.rowMeta}>
-                  {d.status === 'cancelled'
+            <View key={d.distribution_id}>
+              {index > 0 && <Divider />}
+              <List.Item
+                title={d.food_items.item_name}
+                description={
+                  cancelled
                     ? `Sent ${formatDay(d.dispatch_date)} · cancelled by the central store`
                     : `Received ${formatDay(d.received_date!)}` +
-                      (short > 0 ? ` · ${formatQty(short, unit)} short of ${formatQty(d.quantity_dispatched, unit)}` : '')}
-                </Text>
-              </View>
-              <Text style={d.status === 'cancelled' ? styles.qtyMuted : styles.qtyIn}>
-                {d.status === 'cancelled'
-                  ? formatQty(d.quantity_dispatched, unit)
-                  : `+${formatQty(d.quantity_received ?? 0, unit)}`}
-              </Text>
+                      (short > 0 ? ` · ${formatQty(short, unit)} short of ${formatQty(d.quantity_dispatched, unit)}` : '')
+                }
+                descriptionNumberOfLines={3}
+                style={styles.row}
+                left={(props) => (
+                  <List.Icon
+                    {...props}
+                    icon={cancelled ? 'close-circle-outline' : 'check-circle-outline'}
+                    color={cancelled ? colors.textFaint : colors.successText}
+                  />
+                )}
+                right={() => (
+                  <Text variant="titleSmall" style={[styles.qty, cancelled ? styles.qtyMuted : styles.qtyIn]}>
+                    {cancelled
+                      ? formatQty(d.quantity_dispatched, unit)
+                      : `+${formatQty(d.quantity_received ?? 0, unit)}`}
+                  </Text>
+                )}
+              />
             </View>
           );
         })
@@ -558,96 +574,33 @@ function DeliveriesTab() {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  link: { color: c.primary, fontSize: 15 },
   tabBody: { flex: 1, marginTop: 16 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
   chipRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  chip: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  chipActive: { backgroundColor: c.primary, borderColor: c.primary },
-  chipText: { fontSize: 14, color: c.text },
-  chipTextActive: { color: c.onPrimary, fontWeight: '600' },
-  summary: { backgroundColor: c.surface, borderRadius: 12, padding: 16, marginVertical: 16 },
-  summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
-  summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 24, marginBottom: 10, color: c.text },
-  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: c.text,
-  },
-  amountInput: { width: 96, textAlign: 'right' },
-  inlineRow: { flexDirection: 'row', gap: 8 },
-  inlineInput: { flex: 1 },
-  inlineButton: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 90,
-  },
-  inlineButtonText: { color: c.onPrimary, fontSize: 14, fontWeight: '600' },
-  smallButton: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignSelf: 'flex-start',
-    marginTop: 10,
-  },
-  cancelLink: { color: c.textMuted, fontSize: 14, marginTop: 10 },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  buttonConfirm: { backgroundColor: c.warning },
-  buttonText: { color: c.onPrimary, fontSize: 15, fontWeight: '600', textAlign: 'center' },
+  summary: { marginTop: 16 },
+  sectionTitle: { marginTop: 24, marginBottom: 10, color: c.text },
+  firstSection: { marginTop: 4 },
+  meta: { color: c.textMuted },
+  amountInput: { width: 104, alignSelf: 'center' },
+  amountText: { textAlign: 'right' },
+  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inlineInput: { flex: 1, marginTop: 0 },
+  // Lines the button up with the field's outline, below its floating label.
+  inlineButton: { marginTop: 6 },
+  smallButton: { alignSelf: 'flex-start' },
+  cancelButton: { alignSelf: 'flex-start', marginTop: 4 },
+  buttonContent: { paddingVertical: 6 },
+  // Long "Confirm: …" labels wrap instead of being cut off.
+  buttonLabel: { flexShrink: 1, textAlign: 'center' },
   emptyLeft: { color: c.textMuted },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-    gap: 12,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 16, color: c.text },
-  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  card: { backgroundColor: c.surface, borderRadius: 12, padding: 14, marginBottom: 10 },
-  historyDay: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.divider },
-  historyDate: { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 4 },
-  historyLine: { fontSize: 14, color: c.textSecondary, marginTop: 2 },
+  row: { paddingRight: 0 },
+  rowContent: { paddingLeft: 0 },
+  card: { borderRadius: 16, marginBottom: 10 },
+  historyDay: { paddingVertical: 10 },
+  historyDate: { color: c.text, marginBottom: 4 },
+  historyLine: { color: c.textSecondary, marginTop: 2 },
   historyMeal: { color: c.textMuted },
-  qtyIn: { color: c.successText, fontWeight: '600' },
+  qty: { alignSelf: 'center', fontWeight: '600' },
+  qtyIn: { color: c.successText },
   qtyMuted: { color: c.textMuted, textDecorationLine: 'line-through' },
   bottomSpacer: { height: 40 },
 });

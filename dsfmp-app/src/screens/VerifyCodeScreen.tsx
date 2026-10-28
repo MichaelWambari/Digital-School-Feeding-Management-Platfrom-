@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Avatar, HelperText, Surface, Text, TextInput } from 'react-native-paper';
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
-import { FadeIn, PressableScale } from '../components/Motion';
+import { FadeIn } from '../components/Motion';
+import { Button } from '../components/Paper';
 
 const RESEND_SECONDS = 30;
 
@@ -84,53 +86,68 @@ export default function VerifyCodeScreen({ onVerified }: { onVerified: () => voi
 
   return (
     <View style={styles.container}>
-      <FadeIn>
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.subtitle}>
-          {sending && !sentTo
-            ? 'Sending your sign-in code…'
-            : sentTo
-            ? `We sent a 6-digit code to ${sentTo}. It expires in 10 minutes.`
-            : 'We could not send your sign-in code.'}
-        </Text>
-
-        <TextInput
-          style={styles.codeInput}
-          placeholderTextColor={colors.placeholder}
-          value={code}
-          onChangeText={handleChange}
-          keyboardType="number-pad"
-          autoComplete="one-time-code"
-          textContentType="oneTimeCode"
-          maxLength={6}
-          placeholder="••••••"
-          autoFocus
-          editable={!verifying}
-        />
-
-        {error && <Text style={styles.error}>{error}</Text>}
-
-        <PressableScale style={styles.button} onPress={() => handleVerify()} disabled={verifying}>
-          {verifying ? (
-            <ActivityIndicator color={colors.onPrimary} />
-          ) : (
-            <Text style={styles.buttonText}>Verify</Text>
-          )}
-        </PressableScale>
-
-        <PressableScale
-          style={styles.linkButton}
-          onPress={sendCode}
-          disabled={sending || wait > 0}
-        >
-          <Text style={[styles.link, (sending || wait > 0) && styles.linkDisabled]}>
-            {sending ? 'Sending…' : wait > 0 ? `Send a new code in ${wait}s` : 'Send a new code'}
+      <FadeIn style={styles.content}>
+        <View style={styles.brand}>
+          <Avatar.Icon size={64} icon="email-lock-outline" />
+          <Text variant="headlineSmall" style={styles.title}>Check your email</Text>
+          <Text variant="bodyMedium" style={styles.subtitle}>
+            {sending && !sentTo
+              ? 'Sending your sign-in code…'
+              : sentTo
+              ? `We sent a 6-digit code to ${sentTo}. It expires in 10 minutes.`
+              : 'We could not send your sign-in code.'}
           </Text>
-        </PressableScale>
+        </View>
 
-        <PressableScale style={styles.linkButton} onPress={() => supabase.auth.signOut()}>
-          <Text style={styles.logout}>Use a different account</Text>
-        </PressableScale>
+        <Surface style={styles.card} elevation={1}>
+          <TextInput
+            mode="outlined"
+            label="Sign-in code"
+            style={styles.codeInput}
+            contentStyle={styles.codeText}
+            value={code}
+            onChangeText={handleChange}
+            keyboardType="number-pad"
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            maxLength={6}
+            placeholder="••••••"
+            autoFocus
+            disabled={verifying}
+            error={!!error}
+          />
+          <HelperText type="error" visible={!!error} style={styles.error}>
+            {error}
+          </HelperText>
+
+          <Button
+            mode="contained"
+            onPress={() => handleVerify()}
+            loading={verifying}
+            disabled={verifying}
+            contentStyle={styles.buttonContent}
+          >
+            Verify
+          </Button>
+
+          <Button
+            mode="text"
+            icon="email-sync-outline"
+            onPress={sendCode}
+            disabled={sending || wait > 0}
+            style={styles.linkButton}
+          >
+            {sending ? 'Sending…' : wait > 0 ? `Send a new code in ${wait}s` : 'Send a new code'}
+          </Button>
+          <Button
+            mode="text"
+            icon="account-switch-outline"
+            textColor={colors.danger}
+            onPress={() => supabase.auth.signOut()}
+          >
+            Use a different account
+          </Button>
+        </Surface>
       </FadeIn>
     </View>
   );
@@ -157,29 +174,14 @@ async function describeFunctionError(error: unknown) {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: c.background },
-  title: { fontSize: 24, fontWeight: '700', textAlign: 'center', color: c.text },
-  subtitle: { fontSize: 14, color: c.textMuted, textAlign: 'center', marginTop: 8, marginBottom: 28 },
-  codeInput: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingVertical: 14,
-    fontSize: 28,
-    letterSpacing: 10,
-    textAlign: 'center',
-    color: c.text,
-  },
-  error: { color: c.danger, fontSize: 13, marginTop: 12, textAlign: 'center' },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
-  linkButton: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
-  link: { color: c.primary, fontSize: 14, fontWeight: '600' },
-  linkDisabled: { color: c.textMuted, fontWeight: '400' },
-  logout: { color: c.danger, fontSize: 14 },
+  content: { width: '100%', maxWidth: 420, alignSelf: 'center' },
+  brand: { alignItems: 'center', marginBottom: 28 },
+  title: { fontWeight: '700', textAlign: 'center', marginTop: 14, color: c.text },
+  subtitle: { color: c.textMuted, textAlign: 'center', marginTop: 6 },
+  card: { borderRadius: 16, padding: 20 },
+  codeInput: { fontSize: 28 },
+  codeText: { letterSpacing: 10, textAlign: 'center' },
+  error: { textAlign: 'center' },
+  buttonContent: { paddingVertical: 6 },
+  linkButton: { marginTop: 12 },
 });

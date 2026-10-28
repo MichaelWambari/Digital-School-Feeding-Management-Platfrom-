@@ -1,17 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { Divider, HelperText, List, Searchbar, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import { PressableScale } from '../components/Motion';
+import { Button, SegmentedButtons } from '../components/Paper';
+import { EmptyText, ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -25,6 +19,11 @@ const MEAL_LABELS: Record<MealType, string> = {
   breakfast: 'Breakfast',
   lunch: 'Lunch',
   supper: 'Supper',
+};
+const MEAL_ICONS: Record<MealType, string> = {
+  breakfast: 'coffee-outline',
+  lunch: 'food-outline',
+  supper: 'weather-night',
 };
 
 // Local calendar date as YYYY-MM-DD, so "today" matches the coordinator's day
@@ -162,102 +161,98 @@ export default function AttendanceScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Attendance</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ScreenHeader title="Attendance" onBack={() => navigation.goBack()} />
 
-      <View style={styles.segment}>
-        {MEAL_TYPES.map((meal) => (
-          <PressableScale
-            key={meal}
-            style={[styles.segmentItem, mealType === meal && styles.segmentItemActive]}
-            onPress={() => setMealType(meal)}
-            accessibilityState={{ selected: mealType === meal }}
-          >
-            <Text style={[styles.segmentText, mealType === meal && styles.segmentTextActive]}>
-              {MEAL_LABELS[meal]}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
+      <SegmentedButtons
+        value={mealType}
+        onValueChange={(meal) => setMealType(meal as MealType)}
+        buttons={MEAL_TYPES.map((meal) => ({
+          value: meal,
+          label: MEAL_LABELS[meal],
+          icon: MEAL_ICONS[meal],
+        }))}
+      />
 
-      <View style={styles.summary}>
-        <Text style={styles.summaryNumber}>
-          {present.size} / {beneficiaries.length}
-        </Text>
-        <Text style={styles.summaryLabel}>present · {date}</Text>
-      </View>
+      <StatCard
+        style={styles.summary}
+        value={`${present.size} / ${beneficiaries.length}`}
+        label={`present · ${date}`}
+      />
 
       {isNetworkAdmin && (
-        <Text style={styles.viewOnly}>View only. {school.name}'s staff record its attendance.</Text>
+        <Text variant="bodySmall" style={styles.viewOnly}>
+          View only. {school.name}'s staff record its attendance.
+        </Text>
       )}
 
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Searchbar
         value={search}
         onChangeText={setSearch}
         placeholder="Search by name or admission no."
         autoCapitalize="none"
+        elevation={0}
+        style={styles.search}
       />
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <HelperText type="error">{error}</HelperText>}
 
       <FlatList
         style={styles.list}
         data={filtered}
         keyExtractor={(b) => b.beneficiary_id}
         keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
+        ItemSeparatorComponent={Divider}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />
+        }
         ListEmptyComponent={
-          loading ? null : (
-            <Text style={styles.empty}>
-              {term ? 'No students match your search.' : 'No active students.'}
-            </Text>
+          loading ? undefined : (
+            <EmptyText>{term ? 'No students match your search.' : 'No active students.'}</EmptyText>
           )
         }
         renderItem={({ item }) => {
           const isPresent = present.has(item.beneficiary_id);
           const isBusy = busyId === item.beneficiary_id;
           return (
-            <View style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName}>{item.full_name}</Text>
-                <Text style={styles.rowMeta}>{item.admission_no}</Text>
-              </View>
-              <PressableScale
-                style={[
-                  styles.markButton,
-                  isPresent && styles.markButtonDone,
-                  isNetworkAdmin && !isPresent && styles.markButtonViewOnly,
-                ]}
-                onPress={() => (isPresent ? undoPresent(item) : markPresent(item))}
-                disabled={isNetworkAdmin || isBusy || busyId !== null}
-                accessibilityLabel={
-                  isPresent
-                    ? `${item.full_name} is present. Tap to undo.`
-                    : `Mark ${item.full_name} present`
-                }
-              >
-                {isBusy ? (
-                  <ActivityIndicator color={isPresent ? colors.successText : colors.onPrimary} />
+            <List.Item
+              title={item.full_name}
+              description={item.admission_no}
+              style={styles.row}
+              contentStyle={styles.rowContent}
+              right={() =>
+                isNetworkAdmin ? (
+                  <StatusPill
+                    label={isPresent ? 'Present' : 'Not recorded'}
+                    tone={isPresent ? 'success' : 'muted'}
+                    style={styles.pill}
+                  />
                 ) : (
-                  <Text
-                    style={[
-                      styles.markText,
-                      isPresent && styles.markTextDone,
-                      isNetworkAdmin && !isPresent && styles.markTextViewOnly,
-                    ]}
+                  <Button
+                    mode={isPresent ? 'contained-tonal' : 'contained'}
+                    icon={isPresent ? 'check' : undefined}
+                    compact
+                    style={styles.markButton}
+                    buttonColor={isPresent ? colors.successBg : undefined}
+                    textColor={isPresent ? colors.successText : undefined}
+                    // One change at a time; checked here rather than disabling
+                    // every row, which would grey them all out while it saves.
+                    onPress={() => {
+                      if (busyId !== null) return;
+                      if (isPresent) undoPresent(item);
+                      else markPresent(item);
+                    }}
+                    loading={isBusy}
+                    accessibilityLabel={
+                      isPresent
+                        ? `${item.full_name} is present. Tap to undo.`
+                        : `Mark ${item.full_name} present`
+                    }
                   >
-                    {isPresent ? '✓ Present' : isNetworkAdmin ? 'Not recorded' : 'Mark present'}
-                  </Text>
-                )}
-              </PressableScale>
-            </View>
+                    {isPresent ? 'Present' : 'Mark present'}
+                  </Button>
+                )
+              }
+            />
           );
         }}
       />
@@ -267,62 +262,12 @@ export default function AttendanceScreen({ navigation }: any) {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  back: { color: c.primary, fontSize: 15 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  summary: {
-    backgroundColor: c.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginVertical: 16,
-  },
-  summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
-  summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  viewOnly: { fontSize: 13, color: c.textMuted, marginBottom: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: c.text,
-  },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
+  summary: { marginTop: 16 },
+  viewOnly: { color: c.textMuted, marginBottom: 12 },
+  search: { backgroundColor: c.surface },
   list: { marginTop: 12 },
-  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 16, color: c.text },
-  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  markButton: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minWidth: 110,
-    alignItems: 'center',
-  },
-  markButtonDone: { backgroundColor: c.successBg },
-  markButtonViewOnly: { backgroundColor: c.surface },
-  markText: { color: c.onPrimary, fontSize: 14, fontWeight: '600' },
-  markTextDone: { color: c.successText },
-  markTextViewOnly: { color: c.textMuted, fontWeight: '400' },
+  row: { paddingRight: 0 },
+  rowContent: { paddingLeft: 0 },
+  markButton: { alignSelf: 'center', minWidth: 120 },
+  pill: { alignSelf: 'center' },
 });

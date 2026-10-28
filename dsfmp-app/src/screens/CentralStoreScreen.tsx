@@ -1,16 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { ActivityIndicator, Divider, HelperText, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
-import { FadeInScrollView, PressableScale } from '../components/Motion';
+import { FadeInScrollView } from '../components/Motion';
+import { Button, ListItem, SegmentedButtons } from '../components/Paper';
+import { EmptyText, Field, MovementRow, ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
 
 // The network admin's Inventory: the central store that food is
 // dispatched from. Each food on the network's food list has one row.
@@ -61,7 +56,7 @@ function todayLocal() {
 }
 
 export default function CentralStoreScreen({ navigation }: any) {
-  const { styles } = useThemedStyles(makeStyles);
+  const { colors, styles } = useThemedStyles(makeStyles);
   const [foods, setFoods] = useState<Food[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -117,50 +112,55 @@ export default function CentralStoreScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.link}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Central store</Text>
-        <PressableScale onPress={() => setFormTarget('new')}>
-          <Text style={[styles.link, styles.linkStrong]}>+ Food</Text>
-        </PressableScale>
-      </View>
+      <ScreenHeader
+        title="Central store"
+        onBack={() => navigation.goBack()}
+        right={
+          <Button mode="text" icon="plus" onPress={() => setFormTarget('new')}>
+            Food
+          </Button>
+        }
+      />
 
-      <View style={styles.summary}>
-        <Text style={styles.summaryNumber}>{foods.length}</Text>
-        <Text style={styles.summaryLabel}>
-          foods · {lowCount === 0 ? 'none low on stock' : `${lowCount} low on stock`}
-        </Text>
-      </View>
+      <StatCard
+        value={foods.length}
+        label={`foods · ${lowCount === 0 ? 'none low on stock' : `${lowCount} low on stock`}`}
+        tone={lowCount > 0 ? 'warning' : 'default'}
+      />
 
-      <Text style={styles.hint}>
+      <Text variant="bodySmall" style={styles.hint}>
         Food dispatched from here goes to the schools. Each school's own stock is on the
         Distribution screen.
       </Text>
 
-      {loadError && <Text style={styles.error}>Could not load the central store: {loadError}</Text>}
+      {loadError && <HelperText type="error">Could not load the central store: {loadError}</HelperText>}
 
       <FlatList
         data={foods}
         keyExtractor={(f) => f.food_id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadFoods} />}
+        ItemSeparatorComponent={Divider}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadFoods} tintColor={colors.primary} />
+        }
         ListEmptyComponent={
-          loading ? null : (
-            <Text style={styles.empty}>No foods yet. Add the foods the network supplies.</Text>
-          )
+          loading ? undefined : <EmptyText>No foods yet. Add the foods the network supplies.</EmptyText>
         }
         renderItem={({ item }) => (
-          <PressableScale style={styles.row} onPress={() => setDetailId(item.food_id)}>
-            <View style={styles.rowMain}>
-              <Text style={styles.rowName}>{item.item_name}</Text>
-              <Text style={styles.rowMeta}>Reorder at {formatQty(item.reorder_level, item.unit)}</Text>
-            </View>
-            <View style={styles.rowRight}>
-              <Text style={styles.rowQty}>{formatQty(item.quantity_available, item.unit)}</Text>
-              {isLowStock(item) && <Text style={styles.lowBadge}>Low stock</Text>}
-            </View>
-          </PressableScale>
+          <ListItem
+            title={item.item_name}
+            description={`Reorder at ${formatQty(item.reorder_level, item.unit)}`}
+            onPress={() => setDetailId(item.food_id)}
+            style={styles.row}
+            contentStyle={styles.rowContent}
+            right={() => (
+              <View style={styles.rowRight}>
+                <Text variant="titleMedium" style={styles.rowQty}>
+                  {formatQty(item.quantity_available, item.unit)}
+                </Text>
+                {isLowStock(item) && <StatusPill label="Low stock" tone="warning" style={styles.lowPill} />}
+              </View>
+            )}
+          />
         )}
       />
     </View>
@@ -174,7 +174,7 @@ function FoodFormView({
   target: Food | 'new';
   onDone: (saved: boolean) => void;
 }) {
-  const { colors, styles } = useThemedStyles(makeStyles);
+  const { styles } = useThemedStyles(makeStyles);
   const [form, setForm] = useState<FoodForm>(
     target === 'new'
       ? EMPTY_FOOD_FORM
@@ -231,58 +231,53 @@ function FoodFormView({
 
   return (
     <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.header}>
-        <PressableScale onPress={() => onDone(false)} disabled={saving}>
-          <Text style={styles.link}>‹ Cancel</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>{target === 'new' ? 'Add food' : 'Edit food'}</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ScreenHeader
+        title={target === 'new' ? 'Add food' : 'Edit food'}
+        onBack={() => onDone(false)}
+        backLabel="Cancel"
+        backDisabled={saving}
+      />
 
-      <Text style={styles.label}>Name *</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Field
+        label="Name *"
         value={form.item_name}
         onChangeText={(item_name) => setForm({ ...form, item_name })}
         placeholder="e.g. Maize flour"
       />
-
-      <Text style={styles.label}>Unit *</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Field
+        label="Unit *"
         value={form.unit}
         onChangeText={(unit) => setForm({ ...form, unit })}
         autoCapitalize="none"
         placeholder="e.g. kg, litres, packets"
       />
-
-      <Text style={styles.label}>Reorder level</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Field
+        label="Reorder level"
         value={form.reorder_level}
         onChangeText={(reorder_level) => setForm({ ...form, reorder_level })}
         keyboardType="decimal-pad"
         placeholder="Warn when the central store falls to this amount"
       />
 
-      <Text style={styles.hint}>
+      <Text variant="bodySmall" style={styles.hint}>
         {target === 'new'
           ? "New foods start at zero. Record a delivery from the food's page to add stock."
           : 'Schools use the same name and unit, so change them only to correct a mistake.'}
       </Text>
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      <HelperText type="error" visible={!!error}>
+        {error}
+      </HelperText>
 
-      <PressableScale style={styles.button} onPress={handleSave} disabled={saving}>
-        {saving ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={styles.buttonText}>Save</Text>
-        )}
-      </PressableScale>
+      <Button
+        mode="contained"
+        onPress={handleSave}
+        loading={saving}
+        disabled={saving}
+        contentStyle={styles.buttonContent}
+      >
+        Save
+      </Button>
     </FadeInScrollView>
   );
 }
@@ -298,7 +293,7 @@ function StockDetailView({
   onEdit: () => void;
   onStockChanged: () => Promise<void>;
 }) {
-  const { colors, styles } = useThemedStyles(makeStyles);
+  const { styles } = useThemedStyles(makeStyles);
   const [type, setType] = useState<'received' | 'written_off'>('received');
   const [quantity, setQuantity] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -364,90 +359,85 @@ function StockDetailView({
 
   return (
     <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.header}>
-        <PressableScale onPress={onBack} disabled={saving}>
-          <Text style={styles.link}>‹ Central store</Text>
-        </PressableScale>
-        <PressableScale onPress={onEdit} disabled={saving}>
-          <Text style={styles.link}>Edit</Text>
-        </PressableScale>
-      </View>
+      <ScreenHeader
+        title={food.item_name}
+        onBack={onBack}
+        backLabel="Back to Central store"
+        backDisabled={saving}
+        right={
+          <Button mode="text" icon="pencil-outline" onPress={onEdit} disabled={saving}>
+            Edit
+          </Button>
+        }
+      />
 
-      <Text style={styles.detailTitle}>{food.item_name}</Text>
-      <View style={[styles.summary, isLowStock(food) && styles.summaryLow]}>
-        <Text style={styles.summaryNumber}>{formatQty(food.quantity_available, food.unit)}</Text>
-        <Text style={styles.summaryLabel}>
-          in the central store · reorder at {formatQty(food.reorder_level, food.unit)}
-          {isLowStock(food) ? ' · LOW' : ''}
-        </Text>
-      </View>
+      <StatCard
+        value={formatQty(food.quantity_available, food.unit)}
+        label={`in the central store · reorder at ${formatQty(food.reorder_level, food.unit)}${
+          isLowStock(food) ? ' · LOW' : ''
+        }`}
+        tone={isLowStock(food) ? 'warning' : 'default'}
+      />
 
-      <Text style={styles.sectionTitle}>Record stock movement</Text>
-      <View style={styles.segment}>
-        {(['received', 'written_off'] as const).map((t) => (
-          <PressableScale
-            key={t}
-            style={[styles.segmentItem, type === t && styles.segmentItemActive]}
-            onPress={() => setType(t)}
-            accessibilityState={{ selected: type === t }}
-          >
-            <Text style={[styles.segmentText, type === t && styles.segmentTextActive]}>
-              {t === 'received' ? 'Delivery received' : 'Write off'}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
-      <Text style={styles.hint}>
+      <Text variant="titleSmall" style={styles.sectionTitle}>Record stock movement</Text>
+      <SegmentedButtons
+        value={type}
+        onValueChange={(t) => setType(t as typeof type)}
+        buttons={[
+          { value: 'received', label: 'Delivery received', icon: 'truck-check-outline' },
+          { value: 'written_off', label: 'Write off', icon: 'delete-outline' },
+        ]}
+      />
+      <Text variant="bodySmall" style={styles.hint}>
         {type === 'received'
           ? 'Food delivered to the store by a supplier or donor.'
           : 'Food lost, spoiled or counted short. Use Distribution to send food to a school.'}
       </Text>
 
-      <Text style={styles.label}>Quantity ({food.unit})</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Field
+        label={`Quantity (${food.unit})`}
         value={quantity}
         onChangeText={setQuantity}
         keyboardType="decimal-pad"
         placeholder="0"
       />
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      <HelperText type="error" visible={!!error}>
+        {error}
+      </HelperText>
 
-      <PressableScale style={styles.button} onPress={handleRecord} disabled={saving}>
-        {saving ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={styles.buttonText}>
-            {type === 'received' ? 'Add to store' : 'Remove from store'}
-          </Text>
-        )}
-      </PressableScale>
+      <Button
+        mode="contained"
+        icon={type === 'received' ? 'plus' : 'minus'}
+        onPress={handleRecord}
+        loading={saving}
+        disabled={saving}
+        contentStyle={styles.buttonContent}
+      >
+        {type === 'received' ? 'Add to store' : 'Remove from store'}
+      </Button>
 
-      <Text style={styles.sectionTitle}>Recent movements</Text>
+      <Text variant="titleSmall" style={styles.sectionTitle}>Recent movements</Text>
       {historyLoading ? (
         <ActivityIndicator style={styles.historyLoading} />
       ) : history.length === 0 ? (
-        <Text style={styles.emptyLeft}>No stock movements recorded yet.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>No stock movements recorded yet.</Text>
       ) : (
-        history.map((t) => {
+        history.map((t, index) => {
           const isIn = t.transaction_type === 'received' || t.transaction_type === 'returned';
           const school = t.food_distribution?.schools?.name;
           return (
-            <View key={t.transaction_id} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName}>
-                  {MOVEMENT_LABELS[t.transaction_type]}
-                  {school ? (t.transaction_type === 'returned' ? ` (${school})` : ` to ${school}`) : ''}
-                </Text>
-                <Text style={styles.rowMeta}>{t.transaction_date}</Text>
-              </View>
-              <Text style={isIn ? styles.qtyIn : styles.qtyOut}>
-                {isIn ? '+' : '−'}
-                {formatQty(t.quantity, food.unit)}
-              </Text>
-            </View>
+            <MovementRow
+              key={t.transaction_id}
+              first={index === 0}
+              title={
+                MOVEMENT_LABELS[t.transaction_type] +
+                (school ? (t.transaction_type === 'returned' ? ` (${school})` : ` to ${school}`) : '')
+              }
+              date={t.transaction_date}
+              amount={formatQty(t.quantity, food.unit)}
+              direction={isIn ? 'in' : 'out'}
+            />
           );
         })
       )}
@@ -458,73 +448,15 @@ function StockDetailView({
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  link: { color: c.primary, fontSize: 15 },
-  linkStrong: { fontWeight: '600' },
-  detailTitle: { fontSize: 22, fontWeight: '700', marginBottom: 12, color: c.text },
-  sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 24, marginBottom: 10, color: c.text },
-  summary: { backgroundColor: c.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
-  summaryLow: { backgroundColor: c.warningBg },
-  summaryNumber: { fontSize: 26, fontWeight: '700', color: c.text },
-  summaryLabel: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: c.text,
-  },
-  hint: { fontSize: 13, color: c.textMuted, marginTop: 8, marginBottom: 4 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
-  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
+  sectionTitle: { marginTop: 20, marginBottom: 10, color: c.text },
+  hint: { color: c.textMuted, marginTop: 8, marginBottom: 4 },
+  buttonContent: { paddingVertical: 6 },
   emptyLeft: { color: c.textMuted },
   historyLoading: { marginTop: 8 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 16, color: c.text },
-  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  rowRight: { alignItems: 'flex-end' },
-  rowQty: { fontSize: 16, fontWeight: '600', color: c.text },
-  lowBadge: {
-    fontSize: 12,
-    color: c.warningText,
-    backgroundColor: c.warningBg,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  qtyIn: { color: c.successText, fontWeight: '600' },
-  qtyOut: { color: c.danger, fontWeight: '600' },
+  row: { paddingRight: 0 },
+  rowContent: { paddingLeft: 0 },
+  rowRight: { alignItems: 'flex-end', justifyContent: 'center' },
+  rowQty: { fontWeight: '600', color: c.text },
+  lowPill: { alignSelf: 'flex-end', marginTop: 4 },
   bottomSpacer: { height: 40 },
 });

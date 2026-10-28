@@ -1,18 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { Avatar, Divider, HelperText, Searchbar, Text } from 'react-native-paper';
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { ROLE_LABELS, Role, useSchool } from '../school/SchoolContext';
-import { FadeInScrollView, PressableScale } from '../components/Motion';
+import { FadeInScrollView } from '../components/Motion';
+import { Button, Chip, ListItem, SegmentedButtons } from '../components/Paper';
+import { EmptyText, Field, ScreenHeader, StatusPill, initials } from '../components/ScreenParts';
 
 type Staff = {
   user_id: string;
@@ -194,28 +189,23 @@ export default function StaffScreen({ navigation }: any) {
     const isSelf = !isNew && (editing as Staff).user_id === profile.user_id;
     return (
       <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <PressableScale onPress={() => setEditing(null)} disabled={saving}>
-            <Text style={styles.back}>‹ Cancel</Text>
-          </PressableScale>
-          <Text style={styles.headerTitle}>{isNew ? 'Add staff' : 'Edit staff'}</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader
+          title={isNew ? 'Add staff' : 'Edit staff'}
+          onBack={() => setEditing(null)}
+          backLabel="Cancel"
+          backDisabled={saving}
+        />
 
-        <Text style={styles.label}>Full name *</Text>
-        <TextInput
-          style={styles.input}
-          placeholderTextColor={colors.placeholder}
+        <Field
+          label="Full name *"
           value={form.full_name}
           onChangeText={(full_name) => setForm({ ...form, full_name })}
           placeholder="e.g. Grace Achieng"
         />
 
-        <Text style={styles.label}>Email {isNew ? '*' : ''}</Text>
         {isNew ? (
-          <TextInput
-            style={styles.input}
-            placeholderTextColor={colors.placeholder}
+          <Field
+            label="Email *"
             value={form.email}
             onChangeText={(email) => setForm({ ...form, email })}
             autoCapitalize="none"
@@ -225,127 +215,120 @@ export default function StaffScreen({ navigation }: any) {
             placeholder="They sign in with this"
           />
         ) : (
-          <Text style={styles.readOnly}>{form.email}</Text>
+          // The sign-in email can't be changed here, so it's shown but not editable.
+          <Field label="Email" value={form.email} disabled />
         )}
 
         {isNew && (
+          <Field
+            label="Password *"
+            value={form.password}
+            onChangeText={(password) => setForm({ ...form, password })}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            placeholder="At least 8 characters"
+            autoComplete="new-password"
+          />
+        )}
+
+        <Text variant="labelLarge" style={styles.label}>Role</Text>
+        <View style={styles.chipWrap}>
+          {ROLES.map((role) => (
+            <Chip
+              key={role}
+              mode={form.role === role ? 'flat' : 'outlined'}
+              selected={form.role === role}
+              onPress={() => setForm({ ...form, role })}
+              disabled={isSelf}
+            >
+              {ROLE_LABELS[role]}
+            </Chip>
+          ))}
+        </View>
+        {isSelf && (
+          <Text variant="bodySmall" style={styles.hint}>
+            You can't change your own role or suspend yourself.
+          </Text>
+        )}
+
+        {form.role !== 'network_admin' && (
           <>
-            <Text style={styles.label}>Password *</Text>
-            <TextInput
-              style={styles.input}
-              placeholderTextColor={colors.placeholder}
-              value={form.password}
-              onChangeText={(password) => setForm({ ...form, password })}
+            <Text variant="labelLarge" style={styles.label}>School</Text>
+            <View style={styles.chipWrap}>
+              {schools.map((s) => (
+                <Chip
+                  key={s.school_id}
+                  mode={form.school_id === s.school_id ? 'flat' : 'outlined'}
+                  selected={form.school_id === s.school_id}
+                  icon="school-outline"
+                  showSelectedCheck={false}
+                  onPress={() => setForm({ ...form, school_id: s.school_id })}
+                >
+                  {s.name}
+                </Chip>
+              ))}
+            </View>
+          </>
+        )}
+
+        {!isNew && (
+          <>
+            <Text variant="labelLarge" style={styles.label}>Status</Text>
+            <SegmentedButtons
+              value={form.status}
+              onValueChange={(status) => setForm({ ...form, status: status as FormState['status'] })}
+              buttons={[
+                { value: 'active', label: 'Active', icon: 'account-check-outline', disabled: isSelf },
+                { value: 'suspended', label: 'Suspended', icon: 'account-cancel-outline', disabled: isSelf },
+              ]}
+            />
+          </>
+        )}
+
+        <HelperText type="error" visible={!!formError}>
+          {formError}
+        </HelperText>
+
+        <Button
+          mode="contained"
+          icon={isNew ? 'account-plus-outline' : undefined}
+          onPress={handleSave}
+          loading={saving}
+          disabled={saving}
+          contentStyle={styles.buttonContent}
+        >
+          {isNew ? 'Create login' : 'Save'}
+        </Button>
+
+        {!isNew && (
+          <>
+            <Text variant="titleSmall" style={styles.sectionTitle}>Reset password</Text>
+            <Field
+              label="New password"
+              style={styles.firstField}
+              value={newPassword}
+              onChangeText={setNewPassword}
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry
               placeholder="At least 8 characters"
               autoComplete="new-password"
             />
-          </>
-        )}
-
-        <Text style={styles.label}>Role</Text>
-        <View style={styles.chipWrap}>
-          {ROLES.map((role) => (
-            <PressableScale
-              key={role}
-              style={[styles.chip, form.role === role && styles.chipActive, isSelf && styles.chipDisabled]}
-              onPress={() => setForm({ ...form, role })}
-              disabled={isSelf}
-              accessibilityState={{ selected: form.role === role, disabled: isSelf }}
-            >
-              <Text style={[styles.chipText, form.role === role && styles.chipTextActive]}>
-                {ROLE_LABELS[role]}
-              </Text>
-            </PressableScale>
-          ))}
-        </View>
-        {isSelf && (
-          <Text style={styles.hint}>You can't change your own role or suspend yourself.</Text>
-        )}
-
-        {form.role !== 'network_admin' && (
-          <>
-            <Text style={styles.label}>School</Text>
-            <View style={styles.chipWrap}>
-              {schools.map((s) => (
-                <PressableScale
-                  key={s.school_id}
-                  style={[styles.chip, form.school_id === s.school_id && styles.chipActive]}
-                  onPress={() => setForm({ ...form, school_id: s.school_id })}
-                  accessibilityState={{ selected: form.school_id === s.school_id }}
-                >
-                  <Text
-                    style={[styles.chipText, form.school_id === s.school_id && styles.chipTextActive]}
-                  >
-                    {s.name}
-                  </Text>
-                </PressableScale>
-              ))}
-            </View>
-          </>
-        )}
-
-        {!isNew && (
-          <>
-            <Text style={styles.label}>Status</Text>
-            <View style={[styles.segment, isSelf && styles.chipDisabled]}>
-              {(['active', 'suspended'] as const).map((status) => (
-                <PressableScale
-                  key={status}
-                  style={[styles.segmentItem, form.status === status && styles.segmentItemActive]}
-                  onPress={() => setForm({ ...form, status })}
-                  disabled={isSelf}
-                  accessibilityState={{ selected: form.status === status, disabled: isSelf }}
-                >
-                  <Text
-                    style={[styles.segmentText, form.status === status && styles.segmentTextActive]}
-                  >
-                    {status === 'active' ? 'Active' : 'Suspended'}
-                  </Text>
-                </PressableScale>
-              ))}
-            </View>
-          </>
-        )}
-
-        {formError && <Text style={styles.error}>{formError}</Text>}
-
-        <PressableScale style={styles.button} onPress={handleSave} disabled={saving}>
-          {saving ? (
-            <ActivityIndicator color={colors.onPrimary} />
-          ) : (
-            <Text style={styles.buttonText}>{isNew ? 'Create login' : 'Save'}</Text>
-          )}
-        </PressableScale>
-
-        {!isNew && (
-          <>
-            <Text style={styles.sectionTitle}>Reset password</Text>
-            <TextInput
-              style={styles.input}
-              placeholderTextColor={colors.placeholder}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              placeholder="New password, at least 8 characters"
-              autoComplete="new-password"
-            />
-            {passwordMessage && <Text style={styles.hint}>{passwordMessage}</Text>}
-            <PressableScale
-              style={styles.secondaryButton}
+            <HelperText type="info" visible={!!passwordMessage}>
+              {passwordMessage}
+            </HelperText>
+            <Button
+              mode="outlined"
+              icon="lock-reset"
               onPress={handleSetPassword}
+              loading={settingPassword}
               disabled={settingPassword}
+              contentStyle={styles.buttonContent}
+              style={styles.secondaryButton}
             >
-              {settingPassword ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : (
-                <Text style={styles.secondaryButtonText}>Set password</Text>
-              )}
-            </PressableScale>
+              Set password
+            </Button>
           </>
         )}
       </FadeInScrollView>
@@ -370,59 +353,67 @@ export default function StaffScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Staff</Text>
-        <PressableScale onPress={() => openForm('new')}>
-          <Text style={styles.add}>+ Add</Text>
-        </PressableScale>
-      </View>
+      <ScreenHeader
+        title="Staff"
+        onBack={() => navigation.goBack()}
+        right={
+          <Button mode="text" icon="plus" onPress={() => openForm('new')}>
+            Add
+          </Button>
+        }
+      />
 
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Searchbar
         value={search}
         onChangeText={setSearch}
         placeholder="Search by name, email or school"
         autoCapitalize="none"
+        elevation={0}
+        style={styles.search}
       />
 
-      {loadError && <Text style={styles.error}>Could not load staff: {loadError}</Text>}
+      {loadError && <HelperText type="error">Could not load staff: {loadError}</HelperText>}
 
       <FlatList
         style={styles.list}
         data={filtered}
         keyExtractor={(s) => s.user_id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadStaff} />}
+        ItemSeparatorComponent={Divider}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadStaff} tintColor={colors.primary} />
+        }
         ListEmptyComponent={
-          loading ? null : (
-            <Text style={styles.empty}>
-              {term ? 'No staff match your search.' : 'No staff yet.'}
-            </Text>
+          loading ? undefined : (
+            <EmptyText>{term ? 'No staff match your search.' : 'No staff yet.'}</EmptyText>
           )
         }
         renderItem={({ item }) => (
-          <PressableScale style={styles.row} onPress={() => openForm(item)}>
-            <View style={styles.rowMain}>
-              <Text style={styles.rowName}>
-                {item.full_name}
-                {item.user_id === profile.user_id ? ' (you)' : ''}
-              </Text>
-              <Text style={styles.rowMeta}>
-                {ROLE_LABELS[item.role]}
-                {item.role === 'network_admin' ? '' : ` · ${schoolName(item.school_id)}`}
-              </Text>
-              <Text style={styles.rowMeta}>
-                {item.email} ·{' '}
-                {item.last_sign_in_at
-                  ? `Last signed in ${new Date(item.last_sign_in_at).toLocaleDateString()}`
-                  : 'Never signed in'}
-              </Text>
-            </View>
-            {item.status === 'suspended' && <Text style={styles.badge}>suspended</Text>}
-          </PressableScale>
+          <ListItem
+            title={item.full_name + (item.user_id === profile.user_id ? ' (you)' : '')}
+            description={
+              ROLE_LABELS[item.role] +
+              (item.role === 'network_admin' ? '' : ` · ${schoolName(item.school_id)}`) +
+              `\n${item.email} · ` +
+              (item.last_sign_in_at
+                ? `Last signed in ${new Date(item.last_sign_in_at).toLocaleDateString()}`
+                : 'Never signed in')
+            }
+            descriptionNumberOfLines={3}
+            onPress={() => openForm(item)}
+            style={styles.row}
+            left={() => (
+              <Avatar.Text
+                size={40}
+                label={initials(item.full_name)}
+                style={[styles.avatar, item.status === 'suspended' && styles.avatarSuspended]}
+              />
+            )}
+            right={() =>
+              item.status === 'suspended' ? (
+                <StatusPill label="suspended" tone="warning" style={styles.pill} />
+              ) : null
+            }
+          />
         )}
       />
     </View>
@@ -460,84 +451,17 @@ async function describeFunctionError(error: unknown) {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  back: { color: c.primary, fontSize: 15 },
-  add: { color: c.primary, fontSize: 15, fontWeight: '600' },
-  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: c.text,
-  },
-  readOnly: { fontSize: 15, color: c.text, paddingVertical: 4 },
-  hint: { fontSize: 13, color: c.textMuted, marginTop: 8 },
+  label: { color: c.textSecondary, marginBottom: 8, marginTop: 16 },
+  hint: { color: c.textMuted, marginTop: 8 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  chipActive: { backgroundColor: c.primary, borderColor: c.primary },
-  chipDisabled: { opacity: 0.55 },
-  chipText: { fontSize: 14, color: c.text },
-  chipTextActive: { color: c.onPrimary, fontWeight: '600' },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    marginTop: 28,
-    alignItems: 'center',
-  },
-  buttonText: { color: c.onPrimary, fontSize: 16, fontWeight: '600' },
-  sectionTitle: { fontSize: 15, fontWeight: '600', color: c.text, marginTop: 32, marginBottom: 10 },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    marginTop: 12,
-    marginBottom: 40,
-    alignItems: 'center',
-  },
-  secondaryButtonText: { color: c.primary, fontSize: 15, fontWeight: '600' },
+  buttonContent: { paddingVertical: 6 },
+  sectionTitle: { color: c.text, marginTop: 32, marginBottom: 4 },
+  firstField: { marginTop: 4 },
+  secondaryButton: { marginBottom: 40 },
+  search: { backgroundColor: c.surface },
   list: { marginTop: 12 },
-  empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 16, color: c.text },
-  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  badge: {
-    fontSize: 12,
-    color: c.warningText,
-    backgroundColor: c.warningBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
+  row: { paddingLeft: 0, paddingRight: 0 },
+  avatar: { alignSelf: 'center' },
+  avatarSuspended: { opacity: 0.5 },
+  pill: { alignSelf: 'center' },
 });

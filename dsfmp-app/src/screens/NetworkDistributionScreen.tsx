@@ -1,17 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { Card, DataTable, Divider, HelperText, List, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import { FadeInScrollView, PressableScale } from '../components/Motion';
+import { FadeInScrollView } from '../components/Motion';
+import { Button, Chip, SegmentedButtons } from '../components/Paper';
+import { Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
 
 // The network admin's side of food distribution: dispatching food from the
 // central store to schools, and how much of each food every school uses.
@@ -79,28 +74,16 @@ export default function NetworkDistributionScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <PressableScale onPress={() => navigation.goBack()}>
-          <Text style={styles.link}>‹ Back</Text>
-        </PressableScale>
-        <Text style={styles.headerTitle}>Distribution</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ScreenHeader title="Distribution" onBack={() => navigation.goBack()} />
 
-      <View style={styles.segment}>
-        {(['dispatch', 'schools'] as const).map((t) => (
-          <PressableScale
-            key={t}
-            style={[styles.segmentItem, tab === t && styles.segmentItemActive]}
-            onPress={() => setTab(t)}
-            accessibilityState={{ selected: tab === t }}
-          >
-            <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
-              {t === 'dispatch' ? 'Dispatch to schools' : 'Use by school'}
-            </Text>
-          </PressableScale>
-        ))}
-      </View>
+      <SegmentedButtons
+        value={tab}
+        onValueChange={(t) => setTab(t as typeof tab)}
+        buttons={[
+          { value: 'dispatch', label: 'Dispatch to schools', icon: 'truck-delivery-outline' },
+          { value: 'schools', label: 'Use by school', icon: 'chart-bar' },
+        ]}
+      />
 
       {tab === 'dispatch' ? <DispatchTab /> : <SchoolsTab />}
     </View>
@@ -238,53 +221,56 @@ function DispatchTab() {
     <FadeInScrollView
       style={styles.tabBody}
       keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />
+      }
     >
-      <Text style={styles.label}>School</Text>
+      <Text variant="labelLarge" style={styles.label}>School</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContent}>
         {schools.map((s) => (
-          <PressableScale
+          <Chip
             key={s.school_id}
-            style={[styles.chip, s.school_id === schoolId && styles.chipActive]}
+            mode={s.school_id === schoolId ? 'flat' : 'outlined'}
+            selected={s.school_id === schoolId}
+            showSelectedCheck={false}
+            icon="school-outline"
             onPress={() => {
               setSchoolId(s.school_id);
               setConfirming(false);
             }}
-            accessibilityState={{ selected: s.school_id === schoolId }}
           >
-            <Text style={[styles.chipText, s.school_id === schoolId && styles.chipTextActive]}>{s.name}</Text>
-          </PressableScale>
+            {s.name}
+          </Chip>
         ))}
       </ScrollView>
 
-      <Text style={styles.label}>Food</Text>
+      <Text variant="labelLarge" style={styles.label}>Food</Text>
       {!loading && foods.length === 0 ? (
-        <Text style={styles.emptyLeft}>No foods yet. Add foods and record a delivery in Inventory first.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>
+          No foods yet. Add foods and record a delivery in Inventory first.
+        </Text>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContent}>
           {foods.map((f) => (
-            <PressableScale
+            <Chip
               key={f.food_id}
-              style={[styles.chip, f.food_id === foodId && styles.chipActive]}
+              mode={f.food_id === foodId ? 'flat' : 'outlined'}
+              selected={f.food_id === foodId}
+              showSelectedCheck={false}
               onPress={() => {
                 setFoodId(f.food_id);
                 setConfirming(false);
               }}
-              accessibilityState={{ selected: f.food_id === foodId }}
             >
-              <Text style={[styles.chipText, f.food_id === foodId && styles.chipTextActive]}>{f.item_name}</Text>
-              <Text style={[styles.chipMeta, f.food_id === foodId && styles.chipTextActive]}>
-                {formatQty(f.quantity_available, f.unit)} in store
-              </Text>
-            </PressableScale>
+              {f.item_name} · {formatQty(f.quantity_available, f.unit)} in store
+            </Chip>
           ))}
         </ScrollView>
       )}
 
-      <Text style={styles.label}>Quantity to send{food ? ` (${food.unit})` : ''}</Text>
-      <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.placeholder}
+      <Field
+        label={`Quantity to send${food ? ` (${food.unit})` : ''}`}
+        style={styles.quantity}
         value={quantity}
         onChangeText={(text) => {
           setQuantity(text);
@@ -294,65 +280,76 @@ function DispatchTab() {
         placeholder="0"
       />
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      <HelperText type="error" visible={!!error}>
+        {error}
+      </HelperText>
 
-      <PressableScale
-        style={[styles.button, confirming && styles.buttonConfirm]}
+      <Button
+        mode="contained"
+        icon={confirming ? 'check-all' : 'truck-delivery-outline'}
+        buttonColor={confirming ? colors.warning : undefined}
         onPress={handleDispatch}
+        loading={busy && cancelId === null}
         disabled={busy || !food || !school}
+        contentStyle={styles.buttonContent}
+        labelStyle={styles.buttonLabel}
       >
-        {busy && cancelId === null ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={styles.buttonText}>
-            {confirming && food && school
-              ? `Confirm: send ${formatQty(Number(quantity), food.unit)} of ${food.item_name} to ${school.name}`
-              : 'Dispatch'}
-          </Text>
-        )}
-      </PressableScale>
+        {confirming && food && school
+          ? `Confirm: send ${formatQty(Number(quantity), food.unit)} of ${food.item_name} to ${school.name}`
+          : 'Dispatch'}
+      </Button>
 
-      <Text style={styles.sectionTitle}>Recent dispatches</Text>
+      <Text variant="titleSmall" style={styles.sectionTitle}>Recent dispatches</Text>
       {dispatches.length === 0 ? (
-        <Text style={styles.emptyLeft}>Nothing dispatched yet.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>Nothing dispatched yet.</Text>
       ) : (
-        dispatches.map((d) => {
+        dispatches.map((d, index) => {
           const f = foodById.get(d.food_id);
           const unit = f?.unit ?? null;
           const short = d.status === 'received' ? d.quantity_dispatched - (d.quantity_received ?? 0) : 0;
+          const confirmingCancel = cancelId === d.distribution_id;
           return (
-            <View key={d.distribution_id} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowName}>
-                  {f?.item_name ?? 'Food'} · {formatQty(d.quantity_dispatched, unit)} to {schoolName(d.school_id)}
-                </Text>
-                <Text
-                  style={[
-                    styles.rowMeta,
-                    d.status === 'in_transit' && styles.statusTransit,
-                    short > 0 && styles.statusShort,
-                  ]}
-                >
-                  Sent {formatDay(d.dispatch_date)} ·{' '}
-                  {d.status === 'in_transit'
-                    ? 'in transit'
-                    : d.status === 'cancelled'
-                      ? 'cancelled'
-                      : `received ${formatDay(d.received_date!)}` +
-                        (short > 0 ? `, ${formatQty(short, unit)} short` : ' in full')}
-                </Text>
-              </View>
-              {d.status === 'in_transit' && (
-                <PressableScale
-                  style={[styles.cancelButton, cancelId === d.distribution_id && styles.cancelButtonConfirm]}
-                  onPress={() => handleCancel(d)}
-                  disabled={busy}
-                >
-                  <Text style={styles.cancelText}>
-                    {cancelId === d.distribution_id ? 'Confirm cancel' : 'Cancel'}
-                  </Text>
-                </PressableScale>
-              )}
+            <View key={d.distribution_id}>
+              {index > 0 && <Divider />}
+              <List.Item
+                title={`${f?.item_name ?? 'Food'} · ${formatQty(d.quantity_dispatched, unit)} to ${schoolName(d.school_id)}`}
+                titleNumberOfLines={2}
+                description={
+                  `Sent ${formatDay(d.dispatch_date)}` +
+                  (d.status === 'received'
+                    ? ` · received ${formatDay(d.received_date!)}` +
+                      (short > 0 ? `, ${formatQty(short, unit)} short` : ' in full')
+                    : '')
+                }
+                style={styles.row}
+                contentStyle={styles.rowContent}
+                right={() =>
+                  d.status === 'in_transit' ? (
+                    <View style={styles.rowRight}>
+                      <StatusPill label="In transit" tone="warning" />
+                      <Button
+                        mode={confirmingCancel ? 'contained' : 'outlined'}
+                        compact
+                        buttonColor={confirmingCancel ? colors.danger : undefined}
+                        textColor={confirmingCancel ? colors.onPrimary : colors.danger}
+                        onPress={() => handleCancel(d)}
+                        disabled={busy}
+                        style={styles.cancelButton}
+                      >
+                        {confirmingCancel ? 'Confirm cancel' : 'Cancel'}
+                      </Button>
+                    </View>
+                  ) : d.status === 'cancelled' ? (
+                    <StatusPill label="Cancelled" tone="muted" style={styles.pill} />
+                  ) : (
+                    <StatusPill
+                      label={short > 0 ? 'Short' : 'Received'}
+                      tone={short > 0 ? 'danger' : 'success'}
+                      style={styles.pill}
+                    />
+                  )
+                }
+              />
             </View>
           );
         })
@@ -363,7 +360,7 @@ function DispatchTab() {
 }
 
 function SchoolsTab() {
-  const { styles } = useThemedStyles(makeStyles);
+  const { colors, styles } = useThemedStyles(makeStyles);
   const { schools } = useSchool();
   const [range, setRange] = useState<RangeKey>('week');
   const [foods, setFoods] = useState<Food[]>([]);
@@ -457,70 +454,84 @@ function SchoolsTab() {
 
   function renderTable(rows: Map<string, FoodTotals> | undefined) {
     const shown = foods.filter((f) => rows?.has(f.food_id));
-    if (shown.length === 0) return <Text style={styles.emptyLeft}>No food sent or used yet.</Text>;
+    if (shown.length === 0) {
+      return <Text variant="bodyMedium" style={styles.emptyLeft}>No food sent or used yet.</Text>;
+    }
     return (
-      <>
-        <View style={styles.tableRow}>
-          <Text style={[styles.tableHead, styles.foodCol]}>Food</Text>
-          <Text style={[styles.tableHead, styles.numCol]}>Sent</Text>
-          <Text style={[styles.tableHead, styles.numCol]}>Used</Text>
-          <Text style={[styles.tableHead, styles.numCol]}>In stock</Text>
-        </View>
+      <DataTable>
+        <DataTable.Header style={styles.tableRow}>
+          <DataTable.Title style={styles.foodCol}>Food</DataTable.Title>
+          <DataTable.Title numeric>Sent</DataTable.Title>
+          <DataTable.Title numeric>Used</DataTable.Title>
+          <DataTable.Title numeric>In stock</DataTable.Title>
+        </DataTable.Header>
         {shown.map((f) => {
           const t = rows!.get(f.food_id)!;
           return (
-            <View key={f.food_id} style={styles.tableRow}>
-              <Text style={[styles.tableCell, styles.foodCol]}>{f.item_name}</Text>
-              <Text style={[styles.tableCell, styles.numCol]}>{formatQty(t.sent, f.unit)}</Text>
-              <Text style={[styles.tableCell, styles.numCol]}>{formatQty(t.used, f.unit)}</Text>
-              <Text style={[styles.tableCell, styles.numCol]}>{formatQty(t.inStock, f.unit)}</Text>
-            </View>
+            <DataTable.Row key={f.food_id} style={styles.tableRow}>
+              <DataTable.Cell style={styles.foodCol}>{f.item_name}</DataTable.Cell>
+              <DataTable.Cell numeric>{formatQty(t.sent, f.unit)}</DataTable.Cell>
+              <DataTable.Cell numeric>{formatQty(t.used, f.unit)}</DataTable.Cell>
+              <DataTable.Cell numeric>{formatQty(t.inStock, f.unit)}</DataTable.Cell>
+            </DataTable.Row>
           );
         })}
-      </>
+      </DataTable>
     );
   }
 
   return (
     <FadeInScrollView
       style={styles.tabBody}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />
+      }
     >
       <View style={styles.chipRow}>
         {RANGES.map((r) => (
-          <PressableScale
+          <Chip
             key={r.key}
-            style={[styles.chip, range === r.key && styles.chipActive]}
+            mode={range === r.key ? 'flat' : 'outlined'}
+            selected={range === r.key}
+            showSelectedCheck={false}
+            icon="calendar-range"
             onPress={() => setRange(r.key)}
-            accessibilityState={{ selected: range === r.key }}
           >
-            <Text style={[styles.chipText, range === r.key && styles.chipTextActive]}>{r.label}</Text>
-          </PressableScale>
+            {r.label}
+          </Chip>
         ))}
       </View>
-      <Text style={styles.hint}>
+      <Text variant="bodySmall" style={styles.hint}>
         Sent: dispatched in this period. Used: recorded at the school's meals. In stock: now.
       </Text>
 
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <HelperText type="error">{error}</HelperText>}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>All schools</Text>
-        {renderTable(network)}
-      </View>
+      <Card mode="contained" style={styles.card}>
+        <Card.Title title="All schools" titleVariant="titleMedium" titleStyle={styles.cardTitle} />
+        <Card.Content>{renderTable(network)}</Card.Content>
+      </Card>
 
       {schools.map((s) => {
         const transit = inTransit.get(s.school_id) ?? 0;
         return (
-          <View key={s.school_id} style={styles.card}>
-            <Text style={styles.cardTitle}>{s.name}</Text>
-            {transit > 0 && (
-              <Text style={[styles.rowMeta, styles.statusTransit]}>
-                {transit} {transit === 1 ? 'delivery' : 'deliveries'} in transit
-              </Text>
-            )}
-            {renderTable(totals.get(s.school_id))}
-          </View>
+          <Card key={s.school_id} mode="contained" style={styles.card}>
+            <Card.Title
+              title={s.name}
+              titleVariant="titleMedium"
+              titleStyle={styles.cardTitle}
+              right={() =>
+                transit > 0 ? (
+                  <StatusPill
+                    label={`${transit} ${transit === 1 ? 'delivery' : 'deliveries'} in transit`}
+                    tone="warning"
+                    style={styles.transitPill}
+                  />
+                ) : null
+              }
+            />
+            <Card.Content>{renderTable(totals.get(s.school_id))}</Card.Content>
+          </Card>
         );
       })}
       <View style={styles.bottomSpacer} />
@@ -530,86 +541,26 @@ function SchoolsTab() {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: c.text },
-  headerSpacer: { width: 60 },
-  link: { color: c.primary, fontSize: 15 },
   tabBody: { flex: 1, marginTop: 16 },
-  segment: { flexDirection: 'row', borderWidth: 1, borderColor: c.border, borderRadius: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentItemActive: { backgroundColor: c.primary, borderRadius: 7 },
-  segmentText: { fontSize: 14, color: c.textSecondary },
-  segmentTextActive: { color: c.onPrimary, fontWeight: '600' },
-  label: { fontSize: 13, color: c.textSecondary, marginBottom: 6, marginTop: 12 },
-  hint: { fontSize: 13, color: c.textMuted, marginBottom: 12 },
+  label: { color: c.textSecondary, marginBottom: 8, marginTop: 12 },
+  hint: { color: c.textMuted, marginBottom: 12 },
   chipRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   chipsContent: { gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipActive: { backgroundColor: c.primary, borderColor: c.primary },
-  chipText: { fontSize: 14, fontWeight: '600', color: c.text },
-  chipMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
-  chipTextActive: { color: c.onPrimary },
-  input: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: c.text,
-  },
-  error: { color: c.danger, fontSize: 13, marginTop: 12 },
-  button: {
-    backgroundColor: c.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  buttonConfirm: { backgroundColor: c.warning },
-  buttonText: { color: c.onPrimary, fontSize: 15, fontWeight: '600', textAlign: 'center' },
-  sectionTitle: { fontSize: 15, fontWeight: '600', marginTop: 24, marginBottom: 10, color: c.text },
+  quantity: { marginTop: 16 },
+  buttonContent: { paddingVertical: 6 },
+  // Long "Confirm: …" labels wrap instead of being cut off.
+  buttonLabel: { flexShrink: 1, textAlign: 'center' },
+  sectionTitle: { marginTop: 24, marginBottom: 4, color: c.text },
   emptyLeft: { color: c.textMuted },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: c.divider,
-    gap: 12,
-  },
-  rowMain: { flex: 1 },
-  rowName: { fontSize: 15, color: c.text },
-  rowMeta: { fontSize: 13, color: c.textMuted, marginTop: 2 },
-  statusTransit: { color: c.warningText },
-  statusShort: { color: c.danger },
-  cancelButton: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  cancelButtonConfirm: { borderColor: c.danger },
-  cancelText: { color: c.danger, fontSize: 13, fontWeight: '600' },
-  card: { backgroundColor: c.surface, borderRadius: 12, padding: 14, marginBottom: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: c.text, marginBottom: 6 },
-  tableRow: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: c.divider },
-  tableHead: { fontSize: 12, color: c.textMuted, fontWeight: '600' },
-  tableCell: { fontSize: 14, color: c.text },
+  row: { paddingRight: 0 },
+  rowContent: { paddingLeft: 0 },
+  rowRight: { alignItems: 'flex-end', justifyContent: 'center', gap: 6 },
+  pill: { alignSelf: 'center' },
+  cancelButton: { borderColor: c.danger },
+  card: { borderRadius: 16, marginBottom: 12 },
+  cardTitle: { fontWeight: '700', color: c.text },
+  transitPill: { marginRight: 16 },
+  tableRow: { paddingHorizontal: 0 },
   foodCol: { flex: 1.4 },
-  numCol: { flex: 1, textAlign: 'right' },
   bottomSpacer: { height: 40 },
 });
