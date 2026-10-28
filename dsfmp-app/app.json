@@ -30,7 +30,9 @@
       "backgroundColor": "#ffffff"
     },
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-status-bar",
+      "expo-font"
     ]
   }
 }
