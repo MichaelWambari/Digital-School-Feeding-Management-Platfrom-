@@ -22,6 +22,7 @@ suppliers, but can't see any school's records.
 | **Dashboard** | The school's name, active student count and a tile for each module the user may use, plus a light/dark/system theme switch. |
 | **Students** | Searchable list of the school's students with an add/edit form. |
 | **Attendance** | Choose breakfast, lunch or supper and mark each active student present for today. Tap again to undo. Shows a present/total count and includes NFC scans. |
+| **Timetable** | The school's weekly feeding timetable: for each day, which meals are served, each meal's attendance window and the dish on the menu. One meal can be saved for several days at once (e.g. lunch Monday–Friday). Staff with "Manage meals" edit it; everyone can view it. |
 | **Inventory** | The school's stock, with low-stock warnings, a per-food reorder level (set by the headteacher) and the history of food received and used. **Received** records food that arrived, with the amount checked on arrival and who delivered it. A database trigger keeps every stock level correct and blocks using more than is in stock. |
 | **Distribution** | After each meal, record how much of each food was used; the app shows the portion per student from that meal's attendance. Also lists dispatches from the old central store (see below); one still in transit can be received. |
 | **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food used per item, and current stock with low-stock items flagged. |
@@ -51,11 +52,12 @@ The headteacher can change the defaults for each role on the **Permissions**
 screen (`school_role_permissions`). Managing staff, choosing suppliers and
 confirming orders can't be given away. A login with no role sees nothing.
 
-### Meal serving windows
+### Meal timetable
 
-Each school sets its own serving windows and timezone in the `schools` table.
-NFC attendance scans are filed under the meal whose window they fall in. New
-schools start with these defaults (Africa/Nairobi time):
+Each school sets its own weekly timetable on the **Timetable** screen
+(`meal_schedules`, in the school's timezone). An NFC scan is filed under the
+meal whose window, on today's weekday, it falls in. New schools start with
+these windows, Monday to Friday:
 
 | Meal | Window |
 |---|---|
@@ -63,8 +65,9 @@ schools start with these defaults (Africa/Nairobi time):
 | Lunch | 12:00–14:00 |
 | Supper | 18:00–20:00 |
 
-Scans outside every window are rejected with `outside_meal_time`. Leave a
-meal's start and end empty if the school doesn't serve it.
+A scan outside every window is rejected with `outside_meal_time`, and a
+second scan for the same meal with `already_recorded`. Windows on the same
+day can't overlap. Remove a meal from a day if the school doesn't serve it then.
 
 ## Tech stack
 
@@ -116,6 +119,8 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `inventory_items` | Each school's stock of each food it has received |
 | `food_consumption` | Food a school used at one meal on one day |
 | `inventory_transactions` | School stock received (with the supplier) or used at meals. A trigger updates `inventory_items`. |
+| `meals` | Each school's dishes, e.g. "Rice and beans" |
+| `meal_schedules` | The weekly timetable: weekday, meal, attendance window and dish |
 | `meal_attendance` | One row per student, meal and day |
 | `reports` | Saved reports (export is planned) |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |
@@ -269,6 +274,12 @@ the one added in Staff.
 4. Under **Authentication → URL Configuration → Redirect URLs**, add
    `http://localhost:8081`, `exp://**` (Expo Go) and `dsfmp://**` (app builds),
    plus the web address once the app is hosted.
+   To test Google sign-in in **Expo Go** on a phone, start Expo with
+   `npx expo start --tunnel`. On the same Wi-Fi, Expo Go's address contains
+   your computer's IP (`exp://192.168.x.x:8081/...`), and Supabase never
+   redirects to IP addresses, so the phone lands on "localhost" instead. The
+   tunnel gives a named address (`exp://…exp.direct`) that `exp://**` matches.
+   The web app and installed builds (`dsfmp://`) aren't affected.
 5. Under **Authentication → Sign In / Providers**, turn off **Allow new users
    to sign up**. Only people already added in Staff can then sign in. Staff
    created in the app are not affected.

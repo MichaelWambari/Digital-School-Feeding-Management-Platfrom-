@@ -21,6 +21,7 @@ import PermissionsScreen from '../screens/PermissionsScreen';
 import SchoolProfileScreen from '../screens/SchoolProfileScreen';
 import PlatformDashboardScreen from '../screens/PlatformDashboardScreen';
 import SchoolsScreen from '../screens/SchoolsScreen';
+import TimetableScreen from '../screens/TimetableScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -42,6 +43,7 @@ function accountScreens(isPlatformAdmin: boolean) {
       <Stack.Screen name="Staff" component={StaffScreen} />
       <Stack.Screen name="Permissions" component={PermissionsScreen} />
       <Stack.Screen name="SchoolProfile" component={SchoolProfileScreen} />
+      <Stack.Screen name="Timetable" component={TimetableScreen} />
     </>
   );
 }

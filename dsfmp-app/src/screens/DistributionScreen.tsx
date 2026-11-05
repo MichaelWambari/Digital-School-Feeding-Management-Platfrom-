@@ -50,6 +50,12 @@ function localDate(daysAgo = 0) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// ISO weekday of a YYYY-MM-DD date: 1 = Monday ... 7 = Sunday.
+function isoWeekday(date: string) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay() || 7;
+}
+
 function formatDay(date: string) {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
@@ -105,12 +111,13 @@ function UsageTab() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [schoolResult, itemResult, usageResult, fedResult] = await Promise.all([
+    const [scheduleResult, itemResult, usageResult, fedResult] = await Promise.all([
+      // The meals the timetable serves on that day.
       supabase
-        .from('schools')
-        .select('breakfast_start, lunch_start, supper_start')
+        .from('meal_schedules')
+        .select('meal_type')
         .eq('school_id', school.school_id)
-        .single(),
+        .eq('weekday', isoWeekday(date)),
       supabase
         .from('inventory_items')
         .select('item_id, quantity_available, food_items(*)')
@@ -128,14 +135,14 @@ function UsageTab() {
         .eq('attendance_date', date)
         .eq('meal_type', mealType),
     ]);
-    const loadError = schoolResult.error ?? itemResult.error ?? usageResult.error ?? fedResult.error;
+    const loadError = scheduleResult.error ?? itemResult.error ?? usageResult.error ?? fedResult.error;
     if (loadError) {
       setError(`Could not load food used: ${loadError.message}`);
     } else {
       setError(null);
-      // A meal with no serving window isn't served at this school.
-      const windows = schoolResult.data as Record<string, string | null>;
-      const served = MEAL_TYPES.filter((m) => windows[`${m}_start`] !== null);
+      // A meal that isn't on that day's timetable isn't served.
+      const scheduled = new Set((scheduleResult.data ?? []).map((s) => s.meal_type));
+      const served = MEAL_TYPES.filter((m) => scheduled.has(m));
       setServedMeals(served.length > 0 ? served : [...MEAL_TYPES]);
       if (served.length > 0 && !served.includes(mealType)) setMealType(served[0]);
       const loaded = (itemResult.data ?? []) as unknown as Item[];

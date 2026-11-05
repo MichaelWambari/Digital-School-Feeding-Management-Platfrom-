@@ -39,6 +39,7 @@ export default function DashboardScreen({ navigation }: any) {
       icon: 'clipboard-check-outline',
       available: can('view_attendance') || can('record_attendance'),
     },
+    { label: 'Timetable', screen: 'Timetable', icon: 'calendar-clock-outline', available: true },
     { label: 'Inventory', screen: 'Inventory', icon: 'package-variant-closed', available: seesStock },
     { label: 'Distribution', screen: 'Distribution', icon: 'truck-delivery-outline', available: seesStock },
     { label: 'Reports', screen: 'Reports', icon: 'chart-box-outline', available: can('view_reports') },

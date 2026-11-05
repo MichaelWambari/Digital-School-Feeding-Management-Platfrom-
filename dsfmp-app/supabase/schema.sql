@@ -54,6 +54,15 @@
   drop function if exists public.list_schools() cascade;
   drop function if exists public.set_school_status(uuid, text) cascade;
 
+  -- added by fix 010
+  drop function if exists public.check_meal_schedule() cascade;
+  drop function if exists public.touch_updated_at() cascade;
+  drop function if exists public.add_default_timetable() cascade;
+  drop function if exists public.set_meal_schedule(int[], text, time, time, uuid) cascade;
+  drop function if exists public.current_meal(uuid, timestamptz) cascade;
+  drop table if exists meal_schedules cascade;
+  drop table if exists meals cascade;
+
   drop table if exists audit_logs cascade;
   drop table if exists school_role_permissions cascade;
   drop function if exists public.permission_codes() cascade;

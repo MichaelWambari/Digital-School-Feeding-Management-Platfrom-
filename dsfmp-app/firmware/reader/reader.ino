@@ -201,6 +201,7 @@ bool recordScan(const String &card, String &firstName, String &error) {
 String describeError(const String &error) {
   if (error == "unknown_tag") return "Unknown card";
   if (error == "outside_meal_time") return "Not meal time";
+  if (error == "already_recorded") return "Already served";
   if (error == "not_eligible") return "Not eligible";
   if (error == "wrong_school") return "Wrong school";
   if (error == "unregistered_or_inactive_device") return "Reader not reg.";
