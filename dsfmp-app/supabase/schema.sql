@@ -186,9 +186,10 @@
   create table food_items (
     food_id uuid primary key default gen_random_uuid(),
     item_name text not null,
-    unit text not null default 'kg',
+    unit text not null default 'kg' check (unit in ('kg', 'litres')),
     quantity_available numeric not null default 0, -- central store stock
     reorder_level numeric not null default 0,       -- low-stock warning for the central store
+    pack_size numeric check (pack_size is null or pack_size > 0), -- kg per bag or litres per jerrycan, if bagged
     created_at timestamptz default now()
   );
 
@@ -582,8 +583,8 @@
     using (public.is_network_admin()) with check (public.is_network_admin());
   -- quantity_available only changes through central_transactions.
   revoke insert, update on food_items from authenticated;
-  grant insert (item_name, unit, reorder_level) on food_items to authenticated;
-  grant update (item_name, unit, reorder_level) on food_items to authenticated;
+  grant insert (item_name, unit, reorder_level, pack_size) on food_items to authenticated;
+  grant update (item_name, unit, reorder_level, pack_size) on food_items to authenticated;
 
   create policy "Network admins can read central store movements"
     on central_transactions for select using (public.is_network_admin());

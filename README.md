@@ -86,10 +86,12 @@ dsfmp-app/                  The Expo app (run all commands from here)
     fixes/NNN_*.sql         Migrations for an existing database, run in number order
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
     seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
+    seed/staple_foods.sql   Twelve staple foods, stocked in the central store and every school
     functions/manage-staff/ Edge Function that creates staff logins and resets passwords
     functions/login-code/   Edge Function that emails and checks sign-in codes
   scripts/simulate-reader.mjs  NFC reader simulator (npm run simulate)
   firmware/wokwi/           ESP32 reader firmware, runnable in the Wokwi simulator
+  firmware/reader/          ESP32 reader firmware for the real PN532 reader
 ```
 
 ## Database
@@ -102,7 +104,7 @@ dsfmp-app/                  The Expo app (run all commands from here)
 | `users` | Profile, role and school for each Supabase Auth user, created automatically on sign-up |
 | `beneficiaries` | Students at each school, with their NFC tag IDs |
 | `nfc_devices` | Registered card readers, each at one school |
-| `food_items` | The network's food list (name, unit) and the central store's stock of each food |
+| `food_items` | The network's food list (name, unit: `kg` or `litres`) and the central store's stock of each food |
 | `central_transactions` | Central store movements: deliveries, write-offs, dispatches and cancelled dispatches. A trigger updates `food_items`. |
 | `food_distribution` | Dispatches from the central store to a school: in transit, received (with the amount that arrived) or cancelled |
 | `inventory_items` | Each school's stock of each food it has received |
@@ -154,6 +156,11 @@ unregistered readers are still recorded.
    plus a reader for Jasiri School. It also stocks the central store and
    leaves one rice delivery to Tumaini in transit, ready to confirm. It only
    adds missing rows, so it's safe to run again or on a live database.
+4. Optional: run `dsfmp-app/supabase/seed/staple_foods.sql` to add twelve
+   staple foods (maize, maize flour, rice, beans, green grams, lentils,
+   sorghum, millet flour, wheat flour, porridge flour, cooking oil, salt).
+   The central store gets a delivery of each, and every school gets opening
+   stock of each one it doesn't have yet. It's also safe to run again.
 
 ### 2. Install and run
 

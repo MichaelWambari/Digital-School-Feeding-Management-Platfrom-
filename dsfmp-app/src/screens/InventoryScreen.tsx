@@ -8,12 +8,13 @@ import CentralStoreScreen from './CentralStoreScreen';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, ListItem } from '../components/Paper';
 import { EmptyText, Field, MovementRow, ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
+import { formatPacks, formatQty } from '../lib/units';
 
 type Item = {
   item_id: string;
   quantity_available: number;
   reorder_level: number | null;
-  food_items: { item_name: string; unit: string };
+  food_items: { item_name: string; unit: string; pack_size?: number | null };
 };
 
 type Transaction = {
@@ -37,9 +38,6 @@ function isLowStock(item: Item) {
   return (item.reorder_level ?? 0) > 0 && item.quantity_available <= (item.reorder_level ?? 0);
 }
 
-function formatQty(qty: number, unit: string | null) {
-  return `${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
-}
 
 // Network admins manage the central store; school staff see their school's stock.
 export default function InventoryScreen(props: any) {
@@ -59,7 +57,7 @@ function SchoolInventoryScreen({ navigation }: any) {
     setLoading(true);
     const { data, error } = await supabase
       .from('inventory_items')
-      .select('item_id, quantity_available, reorder_level, food_items(item_name, unit)')
+      .select('item_id, quantity_available, reorder_level, food_items(*)')
       .eq('school_id', school.school_id);
     if (error) {
       setLoadError(error.message);
@@ -120,7 +118,13 @@ function SchoolInventoryScreen({ navigation }: any) {
         renderItem={({ item }) => (
           <ListItem
             title={item.food_items.item_name}
-            description={`Reorder at ${formatQty(item.reorder_level ?? 0, item.food_items.unit)}`}
+            description={[
+              formatPacks(item.quantity_available, item.food_items),
+              `Reorder at ${formatQty(item.reorder_level ?? 0, item.food_items.unit)}`,
+            ]
+              .filter(Boolean)
+              .join('\n')}
+            descriptionNumberOfLines={2}
             onPress={() => setDetailId(item.item_id)}
             style={styles.row}
             contentStyle={styles.rowContent}
@@ -216,9 +220,14 @@ function StockDetailView({
 
       <StatCard
         value={formatQty(item.quantity_available, unit)}
-        label={`in stock · reorder at ${formatQty(item.reorder_level ?? 0, unit)}${
-          isLowStock(item) ? ' · LOW' : ''
-        }`}
+        label={[
+          formatPacks(item.quantity_available, item.food_items),
+          `in stock · reorder at ${formatQty(item.reorder_level ?? 0, unit)}${
+            isLowStock(item) ? ' · LOW' : ''
+          }`,
+        ]
+          .filter(Boolean)
+          .join('\n')}
         tone={isLowStock(item) ? 'warning' : 'default'}
       />
 

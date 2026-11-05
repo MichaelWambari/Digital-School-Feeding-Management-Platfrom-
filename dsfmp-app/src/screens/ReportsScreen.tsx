@@ -6,6 +6,7 @@ import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { SegmentedButtons } from '../components/Paper';
 import { ScreenHeader, StatusPill } from '../components/ScreenParts';
+import { formatPacks, formatQty } from '../lib/units';
 
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
@@ -29,6 +30,7 @@ type Item = {
   item_name: string;
   quantity_available: number;
   unit: string | null;
+  pack_size: number | null;
   reorder_level: number | null;
   school_id: string;
 };
@@ -52,9 +54,6 @@ function datesBack(days: number) {
   return dates; // newest first
 }
 
-function formatQty(qty: number, unit: string | null) {
-  return `${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
-}
 
 function formatDay(date: string) {
   const [y, m, d] = date.split('-').map(Number);
@@ -116,7 +115,7 @@ export default function ReportsScreen({ navigation }: any) {
           .eq('status', 'active'),
         supabase
           .from('inventory_items')
-          .select('item_id, quantity_available, reorder_level, school_id, food_items(item_name, unit)')
+          .select('item_id, quantity_available, reorder_level, school_id, food_items(*)')
           .in('school_id', schoolIds),
         fetchAllRows<{ attendance_date: string; meal_type: string }>((from, to) =>
           supabase
@@ -161,7 +160,12 @@ export default function ReportsScreen({ navigation }: any) {
 
       // Food used per item over the range. Each record is one food at one meal.
       const loadedItems: Item[] = (itemResult.data ?? [])
-        .map(({ food_items, ...i }: any) => ({ ...i, item_name: food_items.item_name, unit: food_items.unit }))
+        .map(({ food_items, ...i }: any) => ({
+          ...i,
+          item_name: food_items.item_name,
+          unit: food_items.unit,
+          pack_size: food_items.pack_size ?? null,
+        }))
         .sort((a: Item, b: Item) => a.item_name.localeCompare(b.item_name));
       const byItem = new Map<string, ItemUsed>(
         loadedItems.map((item) => [item.item_id, { item, quantity: 0, meals: 0 }])
@@ -330,10 +334,14 @@ export default function ReportsScreen({ navigation }: any) {
                 {index > 0 && <Divider />}
                 <List.Item
                   title={i.item_name}
-                  description={
+                  description={[
+                    formatPacks(i.quantity_available, { unit: i.unit ?? '', pack_size: i.pack_size }),
                     (allSchools ? `${schoolName(i.school_id)} · ` : '') +
-                    `Reorder at ${formatQty(i.reorder_level ?? 0, i.unit)}`
-                  }
+                      `Reorder at ${formatQty(i.reorder_level ?? 0, i.unit)}`,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
+                  descriptionNumberOfLines={2}
                   right={() => (
                     <View style={styles.rowRight}>
                       <Text variant="titleSmall" style={styles.rowValue}>

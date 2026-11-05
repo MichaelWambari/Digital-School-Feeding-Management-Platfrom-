@@ -1,8 +1,9 @@
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-import { Card, Divider, List, Text, TextInput, TextInputProps } from 'react-native-paper';
+import { Card, Divider, HelperText, List, Text, TextInput, TextInputProps } from 'react-native-paper';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
-import { IconButton } from './Paper';
+import { Measured, formatQty, packName, toBaseQuantity } from '../lib/units';
+import { IconButton, SegmentedButtons } from './Paper';
 
 // Building blocks shared by the inner screens, so they all look alike.
 
@@ -80,6 +81,57 @@ export function Field({ style, ...rest }: Omit<TextInputProps, 'mode'>) {
   return <TextInput mode="outlined" {...rest} style={[styles.field, style]} />;
 }
 
+type QuantityFieldProps = {
+  // e.g. "Quantity to send"; the unit is added after it.
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  // Whether the amount is typed as a number of bags rather than kg/litres.
+  inPacks: boolean;
+  onInPacksChange: (inPacks: boolean) => void;
+  food: Measured;
+  style?: StyleProp<ViewStyle>;
+};
+
+// A quantity box. For bagged food it can take a number of bags instead
+// of kg (or jerrycans instead of litres) and shows the total in kg.
+// Convert what was typed with toBaseQuantity().
+export function QuantityField({ label, value, onChangeText, inPacks, onInPacksChange, food, style }: QuantityFieldProps) {
+  const { styles } = useThemedStyles(makeStyles);
+  const bagged = !!food.pack_size;
+  const typed = Number(value.trim());
+  const showTotal = bagged && inPacks && value.trim() !== '' && Number.isFinite(typed) && typed > 0;
+  return (
+    <View style={style}>
+      {bagged && (
+        <SegmentedButtons
+          style={styles.unitToggle}
+          value={inPacks ? 'packs' : 'base'}
+          onValueChange={(v) => onInPacksChange(v === 'packs')}
+          buttons={[
+            { value: 'base', label: food.unit === 'litres' ? 'Litres' : 'Kilograms' },
+            { value: 'packs', label: `${capitalize(packName(food, 2))} of ${formatQty(food.pack_size!, food.unit)}` },
+          ]}
+        />
+      )}
+      <Field
+        label={`${label} (${bagged && inPacks ? packName(food, 2) : food.unit})`}
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType="decimal-pad"
+        placeholder="0"
+      />
+      {showTotal && (
+        <HelperText type="info">= {formatQty(toBaseQuantity(value, true, food), food.unit)}</HelperText>
+      )}
+    </View>
+  );
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 type MovementRowProps = {
   title: string;
   date: string;
@@ -143,6 +195,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   statLabel: { color: c.textMuted, marginTop: 2 },
   pill: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
   field: { marginTop: 12 },
+  unitToggle: { marginTop: 12 },
   movementRow: { paddingRight: 0 },
   movementAmount: { alignSelf: 'center', fontWeight: '600' },
   empty: { textAlign: 'center', color: c.textMuted, marginTop: 32 },

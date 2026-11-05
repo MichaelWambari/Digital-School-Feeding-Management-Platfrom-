@@ -6,12 +6,20 @@ import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, Chip, SegmentedButtons } from '../components/Paper';
-import { Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
+import { QuantityField, ScreenHeader, StatusPill } from '../components/ScreenParts';
+import { formatQty, formatStock, packName, toBaseQuantity } from '../lib/units';
 
 // The network admin's side of food distribution: dispatching food from the
 // central store to schools, and how much of each food every school uses.
 
-type Food = { food_id: string; item_name: string; unit: string; quantity_available: number };
+// pack_size: kg per bag (litres per jerrycan), or null if the food isn't bagged.
+type Food = {
+  food_id: string;
+  item_name: string;
+  unit: string;
+  quantity_available: number;
+  pack_size: number | null;
+};
 
 type Dispatch = {
   distribution_id: string;
@@ -47,8 +55,12 @@ function localDate(daysAgo = 0) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function formatQty(qty: number, unit: string | null) {
-  return `${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
+// "2 bags (180 kg)" when the amount was typed in bags, otherwise "180 kg".
+function describeAmount(text: string, inPacks: boolean, food: Food) {
+  const total = formatQty(toBaseQuantity(text, inPacks, food), food.unit);
+  if (!inPacks || !food.pack_size) return total;
+  const count = Number(text.trim());
+  return `${count.toLocaleString()} ${packName(food, count)} (${total})`;
 }
 
 function formatDay(date: string) {
@@ -98,6 +110,8 @@ function DispatchTab() {
   const [schoolId, setSchoolId] = useState<string | null>(schools[0]?.school_id ?? null);
   const [foodId, setFoodId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState('');
+  // Bagged food is dispatched in whole bags, so the amount starts in bags.
+  const [inPacks, setInPacks] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Dispatching and cancelling take two taps: the action, then Confirm.
@@ -108,7 +122,7 @@ function DispatchTab() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const [foodResult, dispatchResult] = await Promise.all([
-      supabase.from('food_items').select('food_id, item_name, unit, quantity_available').order('item_name'),
+      supabase.from('food_items').select('*').order('item_name'),
       supabase
         .from('food_distribution')
         .select(
@@ -144,17 +158,18 @@ function DispatchTab() {
   const schoolName = (id: string) => schools.find((s) => s.school_id === id)?.name ?? 'Unknown school';
 
   async function handleDispatch() {
-    const qty = Number(quantity.trim());
     if (!food || !school) {
       setError('Choose a school and a food first.');
       return;
     }
-    if (!Number.isFinite(qty) || qty <= 0) {
+    // Saved in kg or litres; bags are multiplied out.
+    const qty = toBaseQuantity(quantity, inPacks, food);
+    if (!quantity.trim() || !Number.isFinite(qty) || qty <= 0) {
       setError('Enter a quantity greater than zero.');
       return;
     }
     if (qty > food.quantity_available) {
-      setError(`Not enough ${food.item_name}: only ${formatQty(food.quantity_available, food.unit)} in the central store.`);
+      setError(`Not enough ${food.item_name}: only ${formatStock(food.quantity_available, food)} in the central store.`);
       return;
     }
     setError(null);
@@ -268,17 +283,29 @@ function DispatchTab() {
         </ScrollView>
       )}
 
-      <Field
-        label={`Quantity to send${food ? ` (${food.unit})` : ''}`}
-        style={styles.quantity}
-        value={quantity}
-        onChangeText={(text) => {
-          setQuantity(text);
-          setConfirming(false);
-        }}
-        keyboardType="decimal-pad"
-        placeholder="0"
-      />
+      {food && (
+        <Text variant="bodySmall" style={styles.inStore}>
+          {formatStock(food.quantity_available, food)} in the central store
+        </Text>
+      )}
+
+      {food && (
+        <QuantityField
+          label="Quantity to send"
+          style={styles.quantity}
+          value={quantity}
+          onChangeText={(text) => {
+            setQuantity(text);
+            setConfirming(false);
+          }}
+          inPacks={inPacks}
+          onInPacksChange={(next) => {
+            setInPacks(next);
+            setConfirming(false);
+          }}
+          food={food}
+        />
+      )}
 
       <HelperText type="error" visible={!!error}>
         {error}
@@ -295,7 +322,7 @@ function DispatchTab() {
         labelStyle={styles.buttonLabel}
       >
         {confirming && food && school
-          ? `Confirm: send ${formatQty(Number(quantity), food.unit)} of ${food.item_name} to ${school.name}`
+          ? `Confirm: send ${describeAmount(quantity, inPacks, food)} of ${food.item_name} to ${school.name}`
           : 'Dispatch'}
       </Button>
 
@@ -377,7 +404,7 @@ function SchoolsTab() {
     const start = localDate(rangeDays - 1);
     try {
       const [foodResult, items, dispatches, usage] = await Promise.all([
-        supabase.from('food_items').select('food_id, item_name, unit, quantity_available').order('item_name'),
+        supabase.from('food_items').select('*').order('item_name'),
         fetchAllRows<SchoolItem>((from, to) =>
           supabase
             .from('inventory_items')
@@ -546,7 +573,8 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   hint: { color: c.textMuted, marginBottom: 12 },
   chipRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   chipsContent: { gap: 8 },
-  quantity: { marginTop: 16 },
+  quantity: { marginTop: 4 },
+  inStore: { color: c.textMuted, marginTop: 12 },
   buttonContent: { paddingVertical: 6 },
   // Long "Confirm: …" labels wrap instead of being cut off.
   buttonLabel: { flexShrink: 1, textAlign: 'center' },

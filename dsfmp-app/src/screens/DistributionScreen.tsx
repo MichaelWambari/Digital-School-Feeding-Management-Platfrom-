@@ -8,6 +8,7 @@ import NetworkDistributionScreen from './NetworkDistributionScreen';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, Chip, SegmentedButtons } from '../components/Paper';
 import { Field, ScreenHeader, StatCard } from '../components/ScreenParts';
+import { formatPacks, formatQty, formatStock } from '../lib/units';
 
 // A school's side of food distribution: food received from the central
 // store, and food used at each meal.
@@ -15,7 +16,7 @@ import { Field, ScreenHeader, StatCard } from '../components/ScreenParts';
 type Item = {
   item_id: string;
   quantity_available: number;
-  food_items: { item_name: string; unit: string };
+  food_items: { item_name: string; unit: string; pack_size?: number | null };
 };
 
 type Delivery = {
@@ -25,7 +26,7 @@ type Delivery = {
   status: 'in_transit' | 'received' | 'cancelled';
   quantity_received: number | null;
   received_date: string | null;
-  food_items: { item_name: string; unit: string };
+  food_items: { item_name: string; unit: string; pack_size?: number | null };
 };
 
 type UsageRow = { item_id: string; meal_type: MealType; consumption_date: string; quantity: number };
@@ -48,10 +49,6 @@ function localDate(daysAgo = 0) {
   d.setDate(d.getDate() - daysAgo);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function formatQty(qty: number, unit: string | null) {
-  return `${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
 }
 
 function formatDay(date: string) {
@@ -125,7 +122,7 @@ function UsageTab() {
         .single(),
       supabase
         .from('inventory_items')
-        .select('item_id, quantity_available, food_items(item_name, unit)')
+        .select('item_id, quantity_available, food_items(*)')
         .eq('school_id', school.school_id),
       supabase
         .from('food_consumption')
@@ -300,7 +297,7 @@ function UsageTab() {
               <List.Item
                 title={item.food_items.item_name}
                 description={
-                  `${formatQty(item.quantity_available, unit)} in stock` +
+                  `${formatStock(item.quantity_available, item.food_items)} in stock` +
                   (recorded
                     ? ` · ${formatQty(recorded, unit)} used` +
                       (fed ? ` (${formatQty(recorded / fed, unit)} per student)` : '')
@@ -398,7 +395,7 @@ function DeliveriesTab() {
     const { data, error } = await supabase
       .from('food_distribution')
       .select(
-        'distribution_id, quantity_dispatched, dispatch_date, status, quantity_received, received_date, food_items(item_name, unit)'
+        'distribution_id, quantity_dispatched, dispatch_date, status, quantity_received, received_date, food_items(*)'
       )
       .eq('school_id', school.school_id)
       .order('created_at', { ascending: false })
@@ -473,7 +470,9 @@ function DeliveriesTab() {
             <Card key={d.distribution_id} mode="contained" style={styles.card}>
               <Card.Title
                 title={`${d.food_items.item_name} · ${formatQty(d.quantity_dispatched, unit)}`}
-                subtitle={`Sent ${formatDay(d.dispatch_date)}`}
+                subtitle={[`Sent ${formatDay(d.dispatch_date)}`, formatPacks(d.quantity_dispatched, d.food_items)]
+                  .filter(Boolean)
+                  .join(' · ')}
                 left={(props) => <List.Icon {...props} icon="truck-fast-outline" color={colors.primary} />}
               />
               <Card.Content>
