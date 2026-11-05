@@ -154,6 +154,20 @@ where not exists (select 1 from school_role_permissions p where p.school_id = s.
 -- ------------------------------------------------------------
 -- Permission checks used by the policies below
 -- ------------------------------------------------------------
+
+-- Every check requires a finished sign-in (session_verified()). It
+-- comes from fix 006 (emailed sign-in codes); until that is run,
+-- every login counts as finished, as before.
+do $$
+begin
+  if to_regprocedure('public.session_verified()') is null then
+    create function public.session_verified()
+    returns boolean language sql stable as $f$ select true $f$;
+    revoke all on function public.session_verified() from public;
+    grant execute on function public.session_verified() to anon, authenticated;
+  end if;
+end $$;
+
 create or replace function public.is_platform_admin()
 returns boolean language sql stable security definer set search_path = public, pg_temp as $$
   select public.session_verified() and exists (
