@@ -36,8 +36,9 @@ function todayLocal() {
 
 export default function AttendanceScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  // Network admins can look at any school's attendance; the school's own staff record it.
-  const { school, isNetworkAdmin } = useSchool();
+  const { school, profile } = useSchool();
+  // The database only lets admins and coordinators make changes here.
+  const canManage = profile.role === 'admin' || profile.role === 'coordinator';
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   // beneficiary_id -> attendance_id for today's selected meal
@@ -179,9 +180,9 @@ export default function AttendanceScreen({ navigation }: any) {
         label={`present · ${date}`}
       />
 
-      {isNetworkAdmin && (
+      {!canManage && (
         <Text variant="bodySmall" style={styles.viewOnly}>
-          View only. {school.name}'s staff record its attendance.
+          View only. Admins and coordinators record attendance.
         </Text>
       )}
 
@@ -220,7 +221,7 @@ export default function AttendanceScreen({ navigation }: any) {
               style={styles.row}
               contentStyle={styles.rowContent}
               right={() =>
-                isNetworkAdmin ? (
+                !canManage ? (
                   <StatusPill
                     label={isPresent ? 'Present' : 'Not recorded'}
                     tone={isPresent ? 'success' : 'muted'}

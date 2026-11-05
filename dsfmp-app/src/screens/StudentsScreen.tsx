@@ -35,8 +35,9 @@ const EMPTY_FORM: FormState = {
 
 export default function StudentsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  // Network admins can look at any school's students; the school's own staff manage them.
-  const { school, isNetworkAdmin } = useSchool();
+  const { school, profile } = useSchool();
+  // The database only lets admins and coordinators make changes here.
+  const canManage = profile.role === 'admin' || profile.role === 'coordinator';
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -223,7 +224,7 @@ export default function StudentsScreen({ navigation }: any) {
         title="Students"
         onBack={() => navigation.goBack()}
         right={
-          !isNetworkAdmin && (
+          canManage && (
             <Button mode="text" icon="plus" onPress={() => openForm('new')}>
               Add
             </Button>
@@ -231,9 +232,9 @@ export default function StudentsScreen({ navigation }: any) {
         }
       />
 
-      {isNetworkAdmin && (
+      {!canManage && (
         <Text variant="bodySmall" style={styles.viewOnly}>
-          View only. {school.name}'s staff manage its students.
+          View only. Admins and coordinators manage students.
         </Text>
       )}
 
@@ -272,7 +273,7 @@ export default function StudentsScreen({ navigation }: any) {
               (item.nfc_tag_id ? ' · NFC linked' : '')
             }
             onPress={() => openForm(item)}
-            disabled={isNetworkAdmin}
+            disabled={!canManage}
             style={styles.row}
             contentStyle={styles.rowContent}
             right={() => (
