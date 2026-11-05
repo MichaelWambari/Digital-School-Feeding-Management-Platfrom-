@@ -15,7 +15,14 @@ import { formatPacks, formatQty, formatStock } from '../lib/units';
 type Item = {
   item_id: string;
   quantity_available: number;
-  food_items: { item_name: string; unit: string; pack_size?: number | null };
+  food_items: { food_id: string; item_name: string; unit: string; pack_size?: number | null };
+};
+
+// Food a meal should have used: students who attended x the dish's serving.
+type Estimate = {
+  meal_name: string;
+  students: number;
+  rows: { food_id: string; item_name: string; unit: string; quantity: number }[];
 };
 
 type Delivery = {
@@ -100,6 +107,7 @@ function UsageTab() {
   const [usage, setUsage] = useState<UsageRow[]>([]);
   // item_id -> quantity typed for the selected meal
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Food used can't be edited or deleted, so saving takes two taps: Save, then Confirm.
@@ -111,7 +119,7 @@ function UsageTab() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [scheduleResult, itemResult, usageResult, fedResult] = await Promise.all([
+    const [scheduleResult, itemResult, usageResult, fedResult, estimateResult] = await Promise.all([
       // The meals the timetable serves on that day.
       supabase
         .from('meal_schedules')
@@ -134,6 +142,12 @@ function UsageTab() {
         .eq('school_id', school.school_id)
         .eq('attendance_date', date)
         .eq('meal_type', mealType),
+      // Not there before fix 011; the screen then works without the estimate.
+      supabase.rpc('expected_food_use', {
+        p_school_id: school.school_id,
+        p_date: date,
+        p_meal_type: mealType,
+      }),
     ]);
     const loadError = scheduleResult.error ?? itemResult.error ?? usageResult.error ?? fedResult.error;
     if (loadError) {
@@ -146,15 +160,50 @@ function UsageTab() {
       setServedMeals(served.length > 0 ? served : [...MEAL_TYPES]);
       if (served.length > 0 && !served.includes(mealType)) setMealType(served[0]);
       const loaded = (itemResult.data ?? []) as unknown as Item[];
+      const loadedUsage = (usageResult.data ?? []) as UsageRow[];
       setItems(loaded.sort((a, b) => a.food_items.item_name.localeCompare(b.food_items.item_name)));
-      setUsage((usageResult.data ?? []) as UsageRow[]);
+      setUsage(loadedUsage);
       setFed(fedResult.count ?? 0);
+
+      const rows = estimateResult.error ? [] : (estimateResult.data ?? []);
+      const next: Estimate | null =
+        rows.length > 0
+          ? {
+              meal_name: rows[0].meal_name,
+              students: rows[0].students,
+              rows: rows.map((r: any) => ({
+                food_id: r.food_id,
+                item_name: r.item_name,
+                unit: r.unit,
+                quantity: Number(r.quantity),
+              })),
+            }
+          : null;
+      setEstimate(next);
+      // Fill in the estimate for foods not yet recorded at this meal.
+      if (next && next.students > 0) {
+        const recorded = new Set(
+          loadedUsage
+            .filter((u) => u.consumption_date === date && u.meal_type === mealType)
+            .map((u) => u.item_id)
+        );
+        const filled: Record<string, string> = {};
+        for (const r of next.rows) {
+          const item = loaded.find((i) => i.food_items.food_id === r.food_id);
+          if (item && !recorded.has(item.item_id) && r.quantity > 0) {
+            filled[item.item_id] = String(Math.min(r.quantity, Number(item.quantity_available)));
+          }
+        }
+        setAmounts(filled);
+      }
     }
     setLoading(false);
   }, [school.school_id, date, mealType, historyStart]);
 
   useEffect(() => {
+    // Amounts belong to one day's meal; start afresh when either changes.
     setConfirming(false);
+    setAmounts({});
     loadData();
   }, [loadData]);
 
@@ -280,6 +329,33 @@ function UsageTab() {
         value={fed ?? '—'}
         label={`students at ${MEAL_LABELS[mealType].toLowerCase()} · ${formatDay(date)}`}
       />
+
+      {estimate && (
+        <Card mode="outlined" style={styles.estimateCard}>
+          <Card.Content>
+            <Text variant="titleSmall" style={styles.estimateTitle}>
+              Menu: {estimate.meal_name}
+            </Text>
+            <Text variant="bodySmall" style={styles.meta}>
+              {estimate.students === 0
+                ? 'Expected use appears here once students are recorded at this meal.'
+                : `Expected use for ${estimate.students} students × one serving: ` +
+                  estimate.rows.map((r) => `${r.item_name} ${formatQty(r.quantity, r.unit)}`).join(', ') +
+                  '. Filled in below; check it against what the kitchen used before saving.'}
+            </Text>
+            {estimate.students > 0 &&
+              estimate.rows.some((r) => !items.some((i) => i.food_items.food_id === r.food_id)) && (
+                <Text variant="bodySmall" style={styles.estimateWarning}>
+                  Not in stock:{' '}
+                  {estimate.rows
+                    .filter((r) => !items.some((i) => i.food_items.food_id === r.food_id))
+                    .map((r) => r.item_name)
+                    .join(', ')}
+                </Text>
+              )}
+          </Card.Content>
+        </Card>
+      )}
 
       {!loading && items.length === 0 ? (
         <Text variant="bodyMedium" style={styles.emptyLeft}>
@@ -580,6 +656,9 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   tabBody: { flex: 1, marginTop: 16 },
   chipRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   summary: { marginTop: 16 },
+  estimateCard: { borderRadius: 16, marginTop: 12 },
+  estimateTitle: { color: c.text, marginBottom: 4 },
+  estimateWarning: { color: c.warning, marginTop: 6 },
   sectionTitle: { marginTop: 24, marginBottom: 10, color: c.text },
   firstSection: { marginTop: 4 },
   meta: { color: c.textMuted },

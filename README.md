@@ -22,9 +22,9 @@ suppliers, but can't see any school's records.
 | **Dashboard** | The school's name, active student count and a tile for each module the user may use, plus a light/dark/system theme switch. |
 | **Students** | Searchable list of the school's students with an add/edit form. |
 | **Attendance** | Choose breakfast, lunch or supper and mark each active student present for today. Tap again to undo. Shows a present/total count and includes NFC scans. |
-| **Timetable** | The school's weekly feeding timetable: for each day, which meals are served, each meal's attendance window and the dish on the menu. One meal can be saved for several days at once (e.g. lunch Monday–Friday). Staff with "Manage meals" edit it; everyone can view it. |
+| **Timetable** | The school's weekly feeding timetable: for each day, which meals are served, each meal's attendance window and the dish on the menu. One meal can be saved for several days at once (e.g. lunch Monday–Friday). Each dish has a **per-student serving** (e.g. rice 100 g, beans 80 g, oil 10 ml), so the food a meal used is worked out as students who attended × serving. Staff with "Manage meals" edit it; everyone can view it. |
 | **Inventory** | The school's stock, with low-stock warnings, a per-food reorder level (set by the headteacher) and the history of food received and used. **Received** records food that arrived, with the amount checked on arrival and who delivered it. A database trigger keeps every stock level correct and blocks using more than is in stock. |
-| **Distribution** | After each meal, record how much of each food was used; the app shows the portion per student from that meal's attendance. Also lists dispatches from the old central store (see below); one still in transit can be received. |
+| **Distribution** | After each meal, record how much of each food was used. If the day's dish has a serving set, the amounts are filled in from students who attended × serving, to check and save; the app also shows the portion per student. Also lists dispatches from the old central store (see below); one still in transit can be received. |
 | **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food used per item, and current stock with low-stock items flagged. |
 | **Staff** | *Headteacher only:* create logins for the school's staff, give each a role, suspend or restore them, and reset passwords. |
 | **Permissions** | *Headteacher only:* choose what the coordinator, inventory officer and staff roles may do at the school. |
@@ -121,6 +121,7 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `inventory_transactions` | School stock received (with the supplier) or used at meals. A trigger updates `inventory_items`. |
 | `meals` | Each school's dishes, e.g. "Rice and beans" |
 | `meal_schedules` | The weekly timetable: weekday, meal, attendance window and dish |
+| `meal_ingredients` | Each dish's per-student serving: grams (or ml) of each food |
 | `meal_attendance` | One row per student, meal and day |
 | `reports` | Saved reports (export is planned) |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |

@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
-import { Button, Chip } from '../components/Paper';
+import { Button, Chip, IconButton } from '../components/Paper';
 import { Field, ScreenHeader } from '../components/ScreenParts';
 
 type MealType = 'breakfast' | 'lunch' | 'supper';
@@ -18,6 +18,10 @@ type Schedule = {
   meal_id: string | null;
 };
 type Dish = { meal_id: string; name: string };
+type Food = { food_id: string; item_name: string; unit: string };
+// One food in a dish's per-student serving (grams, or ml for litre foods).
+type Ingredient = { meal_id: string; food_id: string; amount_per_serving: number };
+type ServingRow = { food_id: string; amount: string };
 
 const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'supper'];
 const MEAL_LABELS: Record<MealType, string> = { breakfast: 'Breakfast', lunch: 'Lunch', supper: 'Supper' };
@@ -37,6 +41,9 @@ const DEFAULT_WINDOWS: Record<MealType, [string, string]> = {
 };
 
 const CONNECTION_ERROR = 'Unable to connect. Check your connection and try again.';
+
+// Serving amounts are grams for foods counted in kg, millilitres for litres.
+const servingUnit = (food?: Food) => (food?.unit === 'litres' ? 'ml' : 'g');
 
 // Today's weekday at the school (ISO numbering).
 function todayWeekday(timezone: string) {
@@ -58,13 +65,15 @@ export default function TimetableScreen({ navigation }: any) {
   const [day, setDay] = useState(() => todayWeekday(school.timezone));
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
+  const [foods, setFoods] = useState<Food[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<MealType | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [scheduleResult, dishResult] = await Promise.all([
+    const [scheduleResult, dishResult, foodResult, ingredientResult] = await Promise.all([
       supabase
         .from('meal_schedules')
         .select('schedule_id, weekday, meal_type, start_time, end_time, meal_id')
@@ -75,8 +84,14 @@ export default function TimetableScreen({ navigation }: any) {
         .eq('school_id', school.school_id)
         .eq('status', 'active')
         .order('name'),
+      supabase.from('food_items').select('food_id, item_name, unit').order('item_name'),
+      supabase
+        .from('meal_ingredients')
+        .select('meal_id, food_id, amount_per_serving')
+        .eq('school_id', school.school_id),
     ]);
-    const loadError = scheduleResult.error ?? dishResult.error;
+    // meal_ingredients arrives with fix 011; the timetable still works without it.
+    const loadError = scheduleResult.error ?? dishResult.error ?? foodResult.error;
     if (loadError) {
       setError(
         loadError.code === '42P01' || loadError.code === 'PGRST205'
@@ -87,6 +102,8 @@ export default function TimetableScreen({ navigation }: any) {
       setError(null);
       setSchedules((scheduleResult.data ?? []) as Schedule[]);
       setDishes((dishResult.data ?? []) as Dish[]);
+      setFoods((foodResult.data ?? []) as Food[]);
+      setIngredients(ingredientResult.error ? [] : ((ingredientResult.data ?? []) as Ingredient[]));
     }
     setLoading(false);
   }, [school.school_id]);
@@ -96,6 +113,15 @@ export default function TimetableScreen({ navigation }: any) {
   }, [load]);
 
   const dishName = (id: string | null) => dishes.find((d) => d.meal_id === id)?.name ?? null;
+  const servingText = (id: string | null) =>
+    ingredients
+      .filter((i) => i.meal_id === id)
+      .map((i) => {
+        const f = foods.find((x) => x.food_id === i.food_id);
+        return f ? `${f.item_name} ${Number(i.amount_per_serving)} ${servingUnit(f)}` : null;
+      })
+      .filter(Boolean)
+      .join(' · ');
   const entry = (weekday: number, meal: MealType) =>
     schedules.find((s) => s.weekday === weekday && s.meal_type === meal);
 
@@ -107,6 +133,8 @@ export default function TimetableScreen({ navigation }: any) {
         current={entry(day, editing)}
         schedules={schedules}
         dishes={dishes}
+        foods={foods}
+        ingredients={ingredients}
         onCancel={() => setEditing(null)}
         onSaved={async () => {
           setEditing(null);
@@ -149,6 +177,7 @@ export default function TimetableScreen({ navigation }: any) {
       {MEAL_TYPES.map((meal) => {
         const s = entry(day, meal);
         const dish = s ? dishName(s.meal_id) : null;
+        const serving = s ? servingText(s.meal_id) : '';
         return (
           <Card
             key={meal}
@@ -160,9 +189,11 @@ export default function TimetableScreen({ navigation }: any) {
               title={MEAL_LABELS[meal]}
               subtitle={
                 s
-                  ? `${hhmm(s.start_time)}–${hhmm(s.end_time)} · ${dish ?? 'No dish chosen yet'}`
+                  ? `${hhmm(s.start_time)}–${hhmm(s.end_time)} · ${dish ?? 'No dish chosen yet'}` +
+                    (dish ? `\nPer student: ${serving || 'serving not set'}` : '')
                   : 'Not served'
               }
+              subtitleNumberOfLines={3}
               left={(props) => (
                 <List.Icon {...props} icon={MEAL_ICONS[meal]} color={s ? colors.primary : colors.textFaint} />
               )}
@@ -199,6 +230,8 @@ function EditMealView({
   current,
   schedules,
   dishes,
+  foods,
+  ingredients,
   onCancel,
   onSaved,
 }: {
@@ -207,6 +240,8 @@ function EditMealView({
   current: Schedule | undefined;
   schedules: Schedule[];
   dishes: Dish[];
+  foods: Food[];
+  ingredients: Ingredient[];
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -216,6 +251,24 @@ function EditMealView({
   const [end, setEnd] = useState(current ? hhmm(current.end_time) : DEFAULT_WINDOWS[mealType][1]);
   const [dishId, setDishId] = useState<string | null>(current?.meal_id ?? null);
   const [newDish, setNewDish] = useState('');
+  const servingOf = (id: string | null): ServingRow[] =>
+    ingredients
+      .filter((i) => i.meal_id === id)
+      .map((i) => ({ food_id: i.food_id, amount: String(Number(i.amount_per_serving)) }));
+  const [serving, setServing] = useState<ServingRow[]>(() => servingOf(current?.meal_id ?? null));
+  const [servingChanged, setServingChanged] = useState(false);
+  const [foodSearch, setFoodSearch] = useState('');
+
+  function chooseDish(id: string | null) {
+    setDishId(id);
+    setNewDish('');
+    setServing(servingOf(id));
+    setServingChanged(false);
+  }
+  function editServing(rows: ServingRow[]) {
+    setServing(rows);
+    setServingChanged(true);
+  }
   const [days, setDays] = useState<number[]>([day]);
   const [saving, setSaving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -238,6 +291,14 @@ function EditMealView({
       setError('Choose at least one day.');
       return;
     }
+    for (const row of serving) {
+      const amount = Number(row.amount.trim());
+      const food = foods.find((f) => f.food_id === row.food_id);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 5000) {
+        setError(`Enter the ${food?.item_name ?? 'food'} per student in ${servingUnit(food)}, more than 0.`);
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -259,6 +320,21 @@ function EditMealView({
             return;
           }
           mealId = data.meal_id;
+        }
+      }
+      // The serving belongs to the dish, so it applies wherever the dish is served.
+      if (mealId && (servingChanged || typed)) {
+        const { error } = await supabase.rpc('set_meal_ingredients', {
+          p_meal_id: mealId,
+          p_items: serving.map((r) => ({ food_id: r.food_id, amount: Number(r.amount.trim()) })),
+        });
+        if (error) {
+          setError(
+            error.code === 'PGRST202'
+              ? "Serving amounts aren't set up yet. Run supabase/fixes/011_meal_servings.sql."
+              : error.message
+          );
+          return;
         }
       }
       const { error } = await supabase.rpc('set_meal_schedule', {
@@ -348,10 +424,7 @@ function EditMealView({
             key={d.meal_id}
             mode={dishId === d.meal_id && !newDish.trim() ? 'flat' : 'outlined'}
             selected={dishId === d.meal_id && !newDish.trim()}
-            onPress={() => {
-              setDishId(dishId === d.meal_id ? null : d.meal_id);
-              setNewDish('');
-            }}
+            onPress={() => chooseDish(dishId === d.meal_id ? null : d.meal_id)}
           >
             {d.name}
           </Chip>
@@ -360,9 +433,75 @@ function EditMealView({
       <Field
         label="Or a new dish"
         value={newDish}
-        onChangeText={setNewDish}
+        onChangeText={(text) => {
+          setNewDish(text);
+          if (text.trim() && dishId) setDishId(null);
+        }}
         placeholder="e.g. Rice and beans"
       />
+
+      {(dishId || newDish.trim()) && (
+        <>
+          <Text variant="labelLarge" style={styles.label}>Per-student serving</Text>
+          <Text variant="bodySmall" style={styles.hint}>
+            The food one student gets. Food used at the meal is worked out as students who
+            attended × this serving. It applies wherever this dish is served.
+          </Text>
+          {serving.length === 0 && (
+            <Text variant="bodyMedium" style={styles.emptyServing}>No food added yet.</Text>
+          )}
+          {serving.map((row, index) => {
+            const food = foods.find((f) => f.food_id === row.food_id);
+            return (
+              <View key={row.food_id} style={styles.servingRow}>
+                <Text variant="bodyLarge" style={styles.servingFood} numberOfLines={1}>
+                  {food?.item_name ?? 'Food'}
+                </Text>
+                <Field
+                  label={servingUnit(food)}
+                  style={styles.servingAmount}
+                  value={row.amount}
+                  onChangeText={(amount) =>
+                    editServing(serving.map((r, i) => (i === index ? { ...r, amount } : r)))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                />
+                <IconButton
+                  icon="close"
+                  accessibilityLabel={`Remove ${food?.item_name ?? 'food'}`}
+                  onPress={() => editServing(serving.filter((_, i) => i !== index))}
+                />
+              </View>
+            );
+          })}
+          <Field
+            label="Add a food"
+            value={foodSearch}
+            onChangeText={setFoodSearch}
+            placeholder="Search the food list"
+          />
+          <View style={styles.chipWrap}>
+            {foods
+              .filter((f) => !serving.some((r) => r.food_id === f.food_id))
+              .filter((f) => f.item_name.toLowerCase().includes(foodSearch.trim().toLowerCase()))
+              .slice(0, 12)
+              .map((f) => (
+                <Chip
+                  key={f.food_id}
+                  mode="outlined"
+                  icon="plus"
+                  onPress={() => {
+                    editServing([...serving, { food_id: f.food_id, amount: '' }]);
+                    setFoodSearch('');
+                  }}
+                >
+                  {f.item_name}
+                </Chip>
+              ))}
+          </View>
+        </>
+      )}
 
       <Text variant="labelLarge" style={styles.label}>Save for</Text>
       <View style={styles.chipWrap}>
@@ -441,5 +580,9 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   buttonContent: { paddingVertical: 6 },
   removeButton: { marginTop: 12 },
+  emptyServing: { color: c.textMuted, marginTop: 4 },
+  servingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  servingFood: { flex: 1, color: c.text, marginTop: 8 },
+  servingAmount: { width: 96 },
   bottomSpacer: { height: 40 },
 });
