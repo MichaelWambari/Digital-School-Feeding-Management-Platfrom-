@@ -20,7 +20,8 @@ suppliers, but can't see any school's records.
 |---|---|
 | **Login** | Sign in with email and password, then a 6-digit code emailed to you, or with **Continue with Google**. Only people added by their school can sign in. A login created by someone else must choose its own password at its first sign-in. Sessions persist across app restarts. |
 | **Dashboard** | The school's name, active student count and a tile for each module the user may use, plus a light/dark/system theme switch. |
-| **Students** | Searchable list of the school's students with an add/edit form. |
+| **Students** | Searchable list of the school's students with an add/edit form. Tap a student for their **feeding report**: meals attended (breakfast, lunch, supper) and the estimated nutrients provided (energy, protein, carbohydrates, fat, fibre, calcium, iron, zinc, vitamins A and C) per day and in total, over 7, 30 or 90 days, with a daily energy chart and meal-by-meal history. The estimates come from each dish's standard serving, not from what the student actually ate. |
+| **Food values** | (From the Timetable.) Nutrients per 100 g or 100 ml of each food, pre-filled with approximate values from the Kenya Food Composition Tables 2018. A school can enter its own values for a food, with their source. |
 | **Attendance** | Choose breakfast, lunch or supper and mark each active student present for today. Tap again to undo. Shows a present/total count and includes NFC scans. |
 | **Timetable** | The school's weekly feeding timetable: for each day, which meals are served, each meal's attendance window and the dish on the menu. One meal can be saved for several days at once (e.g. lunch Monday–Friday). Each dish has a **per-student serving** (e.g. rice 100 g, beans 80 g, oil 10 ml), so the food a meal used is worked out as students who attended × serving. Staff with "Manage meals" edit it; everyone can view it. |
 | **Inventory** | The school's stock, with low-stock warnings, a per-food reorder level (set by the headteacher) and the history of food received and used. **Received** records food that arrived, with the amount checked on arrival and who delivered it. A database trigger keeps every stock level correct and blocks using more than is in stock. |
@@ -122,6 +123,8 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `meals` | Each school's dishes, e.g. "Rice and beans" |
 | `meal_schedules` | The weekly timetable: weekday, meal, attendance window and dish |
 | `meal_ingredients` | Each dish's per-student serving: grams (or ml) of each food |
+| `food_nutrition` | Nutrients per 100 g/ml of each food: shared values and each school's own |
+| `attendance_nutrition` | For each attended meal, the dish, serving and estimated nutrients, as worked out when it was recorded |
 | `meal_attendance` | One row per student, meal and day |
 | `reports` | Saved reports (export is planned) |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |

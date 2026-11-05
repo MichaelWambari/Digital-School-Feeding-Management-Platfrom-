@@ -151,7 +151,15 @@ export default function TimetableScreen({ navigation }: any) {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.primary} />}
     >
-      <ScreenHeader title="Timetable" onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title="Timetable"
+        onBack={() => navigation.goBack()}
+        right={
+          <Button mode="text" icon="nutrition" onPress={() => navigation.navigate('FoodValues')}>
+            Food values
+          </Button>
+        }
+      />
       <Text variant="bodySmall" style={styles.hint}>
         Students can only register attendance inside these times ({school.timezone} time).
         {canEdit ? ' Tap a meal to change it.' : ''}

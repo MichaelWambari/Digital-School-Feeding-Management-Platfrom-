@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
-import { Button, ListItem, SegmentedButtons } from '../components/Paper';
+import { Button, IconButton, ListItem, SegmentedButtons } from '../components/Paper';
 import { EmptyText, Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
 
 type Beneficiary = {
@@ -38,6 +38,8 @@ export default function StudentsScreen({ navigation }: any) {
   const { school, can } = useSchool();
   // The database checks the same permission.
   const canManage = can('manage_students');
+  // Tapping a student opens their feeding report, for those who may see it.
+  const canReport = can('view_attendance') || can('view_nutrition');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -272,16 +274,33 @@ export default function StudentsScreen({ navigation }: any) {
               (item.age !== null ? ` · Age ${item.age}` : '') +
               (item.nfc_tag_id ? ' · NFC linked' : '')
             }
-            onPress={() => openForm(item)}
-            disabled={!canManage}
+            onPress={() =>
+              canReport
+                ? navigation.navigate('StudentReport', {
+                    beneficiaryId: item.beneficiary_id,
+                    name: item.full_name,
+                    admissionNo: item.admission_no,
+                  })
+                : openForm(item)
+            }
+            disabled={!canReport && !canManage}
             style={styles.row}
             contentStyle={styles.rowContent}
             right={() => (
-              <StatusPill
-                label={item.status}
-                tone={item.status === 'active' ? 'success' : 'muted'}
-                style={styles.pill}
-              />
+              <View style={styles.rowRight}>
+                <StatusPill
+                  label={item.status}
+                  tone={item.status === 'active' ? 'success' : 'muted'}
+                  style={styles.pill}
+                />
+                {canReport && canManage && (
+                  <IconButton
+                    icon="pencil-outline"
+                    accessibilityLabel={`Edit ${item.full_name}`}
+                    onPress={() => openForm(item)}
+                  />
+                )}
+              </View>
             )}
           />
         )}
@@ -314,4 +333,5 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   row: { paddingRight: 0 },
   rowContent: { paddingLeft: 0 },
   pill: { alignSelf: 'center' },
+  rowRight: { flexDirection: 'row', alignItems: 'center' },
 });
