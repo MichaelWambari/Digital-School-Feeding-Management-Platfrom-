@@ -35,9 +35,9 @@ const EMPTY_FORM: FormState = {
 
 export default function StudentsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, profile } = useSchool();
-  // The database only lets admins and coordinators make changes here.
-  const canManage = profile.role === 'admin' || profile.role === 'coordinator';
+  const { school, can } = useSchool();
+  // The database checks the same permission.
+  const canManage = can('manage_students');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -234,7 +234,7 @@ export default function StudentsScreen({ navigation }: any) {
 
       {!canManage && (
         <Text variant="bodySmall" style={styles.viewOnly}>
-          View only. Admins and coordinators manage students.
+          View only. You don't have permission to manage students.
         </Text>
       )}
 

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Avatar, Divider, HelperText, Searchbar, Text } from 'react-native-paper';
-import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { invokeManageStaff } from '../lib/manageStaff';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
-import { ROLE_LABELS, Role, useSchool } from '../school/SchoolContext';
+import { ROLE_LABELS, SchoolRole, useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, Chip, ListItem, SegmentedButtons } from '../components/Paper';
 import { EmptyText, Field, ScreenHeader, StatusPill, initials } from '../components/ScreenParts';
@@ -13,8 +13,7 @@ type Staff = {
   user_id: string;
   email: string;
   full_name: string;
-  role: Role;
-  school_id: string | null;
+  role: SchoolRole;
   status: 'active' | 'suspended';
   last_sign_in_at: string | null;
 };
@@ -23,19 +22,18 @@ type FormState = {
   full_name: string;
   email: string;
   password: string;
-  role: Role;
-  school_id: string | null;
+  role: SchoolRole;
   status: 'active' | 'suspended';
 };
 
-const ROLES: Role[] = ['admin', 'coordinator', 'inventory_officer', 'network_admin'];
+const ROLES: SchoolRole[] = ['headteacher', 'coordinator', 'inventory_officer', 'staff'];
 
-// The network admin's list of staff logins. New logins are created by the
-// manage-staff Edge Function; everything else goes through list_staff() and
-// update_staff().
+// The headteacher's list of their school's staff logins. New logins are
+// created by the manage-staff Edge Function; everything else goes through
+// list_staff() and update_staff().
 export default function StaffScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { profile, schools, school } = useSchool();
+  const { profile, school } = useSchool();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,9 +47,6 @@ export default function StaffScreen({ navigation }: any) {
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [settingPassword, setSettingPassword] = useState(false);
-
-  const schoolName = (schoolId: string | null) =>
-    schools.find((s) => s.school_id === schoolId)?.name ?? 'No school';
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -72,20 +67,12 @@ export default function StaffScreen({ navigation }: any) {
   function openForm(target: Staff | 'new') {
     setForm(
       target === 'new'
-        ? {
-            full_name: '',
-            email: '',
-            password: '',
-            role: 'admin',
-            school_id: school.school_id,
-            status: 'active',
-          }
+        ? { full_name: '', email: '', password: '', role: 'coordinator', status: 'active' }
         : {
             full_name: target.full_name,
             email: target.email,
             password: '',
             role: target.role,
-            school_id: target.school_id,
             status: target.status,
           }
     );
@@ -99,14 +86,9 @@ export default function StaffScreen({ navigation }: any) {
     if (!form) return;
     const fullName = form.full_name.trim();
     const email = form.email.trim();
-    const schoolId = form.role === 'network_admin' ? null : form.school_id;
 
     if (!fullName) {
       setFormError('Full name is required.');
-      return;
-    }
-    if (form.role !== 'network_admin' && !schoolId) {
-      setFormError('Choose a school.');
       return;
     }
     if (editing === 'new') {
@@ -124,18 +106,15 @@ export default function StaffScreen({ navigation }: any) {
     setFormError(null);
     try {
       if (editing === 'new') {
-        const { error } = await supabase.functions.invoke('manage-staff', {
-          body: {
-            action: 'create',
-            email,
-            password: form.password,
-            full_name: fullName,
-            role: form.role,
-            school_id: schoolId,
-          },
+        const { error } = await invokeManageStaff({
+          action: 'create',
+          email,
+          password: form.password,
+          full_name: fullName,
+          role: form.role,
         });
         if (error) {
-          setFormError(await describeFunctionError(error));
+          setFormError(error);
           return;
         }
       } else {
@@ -143,7 +122,6 @@ export default function StaffScreen({ navigation }: any) {
           p_user_id: (editing as Staff).user_id,
           p_full_name: fullName,
           p_role: form.role,
-          p_school_id: schoolId,
           p_status: form.status,
         });
         if (error) {
@@ -167,21 +145,18 @@ export default function StaffScreen({ navigation }: any) {
     }
     setSettingPassword(true);
     setPasswordMessage(null);
-    try {
-      const { error } = await supabase.functions.invoke('manage-staff', {
-        body: { action: 'set_password', user_id: (editing as Staff).user_id, password: newPassword },
-      });
-      if (error) {
-        setPasswordMessage(await describeFunctionError(error));
-        return;
-      }
-      setNewPassword('');
-      setPasswordMessage('Password changed. Give it to them; they can sign in with it now.');
-    } catch {
-      setPasswordMessage('Unable to connect. Check your connection and try again.');
-    } finally {
-      setSettingPassword(false);
+    const { error } = await invokeManageStaff({
+      action: 'set_password',
+      user_id: (editing as Staff).user_id,
+      password: newPassword,
+    });
+    setSettingPassword(false);
+    if (error) {
+      setPasswordMessage(error);
+      return;
     }
+    setNewPassword('');
+    setPasswordMessage('Password changed. Give it to them; they choose their own when they next sign in.');
   }
 
   if (editing && form) {
@@ -220,16 +195,21 @@ export default function StaffScreen({ navigation }: any) {
         )}
 
         {isNew && (
-          <Field
-            label="Password *"
-            value={form.password}
-            onChangeText={(password) => setForm({ ...form, password })}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            placeholder="At least 8 characters"
-            autoComplete="new-password"
-          />
+          <>
+            <Field
+              label="Temporary password *"
+              value={form.password}
+              onChangeText={(password) => setForm({ ...form, password })}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+            />
+            <Text variant="bodySmall" style={styles.hint}>
+              They choose their own password the first time they sign in.
+            </Text>
+          </>
         )}
 
         <Text variant="labelLarge" style={styles.label}>Role</Text>
@@ -246,31 +226,11 @@ export default function StaffScreen({ navigation }: any) {
             </Chip>
           ))}
         </View>
-        {isSelf && (
-          <Text variant="bodySmall" style={styles.hint}>
-            You can't change your own role or suspend yourself.
-          </Text>
-        )}
-
-        {form.role !== 'network_admin' && (
-          <>
-            <Text variant="labelLarge" style={styles.label}>School</Text>
-            <View style={styles.chipWrap}>
-              {schools.map((s) => (
-                <Chip
-                  key={s.school_id}
-                  mode={form.school_id === s.school_id ? 'flat' : 'outlined'}
-                  selected={form.school_id === s.school_id}
-                  icon="school-outline"
-                  showSelectedCheck={false}
-                  onPress={() => setForm({ ...form, school_id: s.school_id })}
-                >
-                  {s.name}
-                </Chip>
-              ))}
-            </View>
-          </>
-        )}
+        <Text variant="bodySmall" style={styles.hint}>
+          {isSelf
+            ? "You can't change your own role or suspend yourself. To hand over, make someone else headteacher; they can then change your role."
+            : 'What each role may do is set under Permissions.'}
+        </Text>
 
         {!isNew && (
           <>
@@ -301,11 +261,11 @@ export default function StaffScreen({ navigation }: any) {
           {isNew ? 'Create login' : 'Save'}
         </Button>
 
-        {!isNew && (
+        {!isNew && !isSelf && (
           <>
             <Text variant="titleSmall" style={styles.sectionTitle}>Reset password</Text>
             <Field
-              label="New password"
+              label="Temporary password"
               style={styles.firstField}
               value={newPassword}
               onChangeText={setNewPassword}
@@ -337,17 +297,14 @@ export default function StaffScreen({ navigation }: any) {
 
   const term = search.trim().toLowerCase();
   const sorted = [...staff].sort(
-    (a, b) =>
-      (a.role === 'network_admin' ? '' : schoolName(a.school_id)).localeCompare(
-        b.role === 'network_admin' ? '' : schoolName(b.school_id)
-      ) || a.full_name.localeCompare(b.full_name)
+    (a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || a.full_name.localeCompare(b.full_name)
   );
   const filtered = term
     ? sorted.filter(
         (s) =>
           s.full_name.toLowerCase().includes(term) ||
           s.email.toLowerCase().includes(term) ||
-          schoolName(s.school_id).toLowerCase().includes(term)
+          ROLE_LABELS[s.role].toLowerCase().includes(term)
       )
     : sorted;
 
@@ -362,11 +319,12 @@ export default function StaffScreen({ navigation }: any) {
           </Button>
         }
       />
+      <Text variant="bodySmall" style={styles.schoolName}>{school.name}</Text>
 
       <Searchbar
         value={search}
         onChangeText={setSearch}
-        placeholder="Search by name, email or school"
+        placeholder="Search by name, email or role"
         autoCapitalize="none"
         elevation={0}
         style={styles.search}
@@ -392,7 +350,6 @@ export default function StaffScreen({ navigation }: any) {
             title={item.full_name + (item.user_id === profile.user_id ? ' (you)' : '')}
             description={
               ROLE_LABELS[item.role] +
-              (item.role === 'network_admin' ? '' : ` · ${schoolName(item.school_id)}`) +
               `\n${item.email} · ` +
               (item.last_sign_in_at
                 ? `Last signed in ${new Date(item.last_sign_in_at).toLocaleDateString()}`
@@ -421,36 +378,16 @@ export default function StaffScreen({ navigation }: any) {
 }
 
 function describeError(error: { code?: string; message: string }) {
-  if (error.code === '42501') return 'Only network admins can manage staff.';
+  if (error.code === '42501') return 'Only the headteacher can manage staff.';
   if (error.code === 'PGRST202') {
-    return 'The staff functions are missing. Run supabase/fixes/005_staff_management.sql.';
+    return 'The staff functions are out of date. Run supabase/fixes/009_independent_schools.sql.';
   }
   return error.message;
 }
 
-// Turns a manage-staff failure into a message, including the common
-// set-up problems (function not deployed, gateway rejecting the login).
-async function describeFunctionError(error: unknown) {
-  if (error instanceof FunctionsHttpError) {
-    const response = error.context as Response;
-    if (response.status === 404) {
-      return 'The manage-staff function is not deployed yet. See "Staff accounts" in the README.';
-    }
-    const body = await response.json().catch(() => null);
-    if (body?.error) return String(body.error);
-    if (response.status === 401) {
-      return 'Supabase rejected your login for manage-staff. Turn off "Verify JWT" for the function (it checks the login itself), or sign out and in again.';
-    }
-    return body?.message ?? error.message;
-  }
-  if (error instanceof FunctionsFetchError) {
-    return 'Could not reach the manage-staff function. Check your connection and that the function is deployed.';
-  }
-  return error instanceof Error ? error.message : 'Something went wrong.';
-}
-
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
+  schoolName: { color: c.textMuted, marginTop: -8, marginBottom: 12 },
   label: { color: c.textSecondary, marginBottom: 8, marginTop: 16 },
   hint: { color: c.textMuted, marginTop: 8 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

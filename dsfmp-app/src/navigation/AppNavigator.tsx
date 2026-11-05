@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeContext';
-import { SchoolProvider } from '../school/SchoolContext';
+import { AccountProvider, useAccount } from '../school/SchoolContext';
 import { FadeIn } from '../components/Motion';
 
 import LoginScreen from '../screens/LoginScreen';
@@ -17,8 +17,40 @@ import DistributionScreen from '../screens/DistributionScreen';
 import ReportsScreen from '../screens/ReportsScreen';
 import StaffScreen from '../screens/StaffScreen';
 import VerifyCodeScreen from '../screens/VerifyCodeScreen';
+import PermissionsScreen from '../screens/PermissionsScreen';
+import SchoolProfileScreen from '../screens/SchoolProfileScreen';
+import PlatformDashboardScreen from '../screens/PlatformDashboardScreen';
+import SchoolsScreen from '../screens/SchoolsScreen';
 
 const Stack = createNativeStackNavigator();
+
+// The signed-in screens: the platform admin's, or the school's.
+function accountScreens(isPlatformAdmin: boolean) {
+  return isPlatformAdmin ? (
+    <>
+      <Stack.Screen name="Dashboard" component={PlatformDashboardScreen} />
+      <Stack.Screen name="Schools" component={SchoolsScreen} />
+    </>
+  ) : (
+    <>
+      <Stack.Screen name="Dashboard" component={DashboardScreen} />
+      <Stack.Screen name="Students" component={StudentsScreen} />
+      <Stack.Screen name="Attendance" component={AttendanceScreen} />
+      <Stack.Screen name="Inventory" component={InventoryScreen} />
+      <Stack.Screen name="Distribution" component={DistributionScreen} />
+      <Stack.Screen name="Reports" component={ReportsScreen} />
+      <Stack.Screen name="Staff" component={StaffScreen} />
+      <Stack.Screen name="Permissions" component={PermissionsScreen} />
+      <Stack.Screen name="SchoolProfile" component={SchoolProfileScreen} />
+    </>
+  );
+}
+
+// Reads the account inside AccountProvider, so its screens can be chosen by role.
+function SignedInScreens({ render }: { render: (isPlatformAdmin: boolean) => React.ReactElement }) {
+  const { profile } = useAccount();
+  return render(profile.role === 'platform_admin');
+}
 
 // The login session's ID from its access token. It stays the same when the
 // token is refreshed, so the sign-in code is checked once per sign-in.
@@ -93,7 +125,7 @@ export default function AppNavigator() {
   // Screens slide in on phones; the web has no native transitions, so each
   // screen fades in instead. The keyboard view lifts screens above the
   // on-screen keyboard so the field being typed in stays visible.
-  const navigator = (
+  const navigator = (isPlatformAdmin: boolean) => (
     <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={Platform.OS !== 'web'}>
       <NavigationContainer theme={navigationTheme}>
         <Stack.Navigator
@@ -105,15 +137,7 @@ export default function AppNavigator() {
           }
         >
           {session ? (
-            <>
-              <Stack.Screen name="Dashboard" component={DashboardScreen} />
-              <Stack.Screen name="Students" component={StudentsScreen} />
-              <Stack.Screen name="Attendance" component={AttendanceScreen} />
-              <Stack.Screen name="Inventory" component={InventoryScreen} />
-              <Stack.Screen name="Distribution" component={DistributionScreen} />
-              <Stack.Screen name="Reports" component={ReportsScreen} />
-              <Stack.Screen name="Staff" component={StaffScreen} />
-            </>
+            accountScreens(isPlatformAdmin)
           ) : (
             <Stack.Screen name="Login" component={LoginScreen} />
           )}
@@ -122,11 +146,13 @@ export default function AppNavigator() {
     </KeyboardAvoidingView>
   );
 
-  // Signed-in screens all work on one school; keyed by user so a new login reloads it.
+  // Keyed by user so a new login reloads the account.
   return session ? (
-    <SchoolProvider key={session.user.id}>{navigator}</SchoolProvider>
+    <AccountProvider key={session.user.id}>
+      <SignedInScreens render={navigator} />
+    </AccountProvider>
   ) : (
-    navigator
+    navigator(false)
   );
 }
 

@@ -36,9 +36,9 @@ function todayLocal() {
 
 export default function AttendanceScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, profile } = useSchool();
-  // The database only lets admins and coordinators make changes here.
-  const canManage = profile.role === 'admin' || profile.role === 'coordinator';
+  const { school, can } = useSchool();
+  // The database checks the same permission.
+  const canManage = can('record_attendance');
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   // beneficiary_id -> attendance_id for today's selected meal
@@ -182,7 +182,7 @@ export default function AttendanceScreen({ navigation }: any) {
 
       {!canManage && (
         <Text variant="bodySmall" style={styles.viewOnly}>
-          View only. Admins and coordinators record attendance.
+          View only. You don't have permission to record attendance.
         </Text>
       )}
 

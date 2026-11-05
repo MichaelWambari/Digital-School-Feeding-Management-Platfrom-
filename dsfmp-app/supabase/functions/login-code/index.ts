@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       .eq('user_id', auth.user.id)
       .maybeSingle();
     if (profile?.status !== 'active') {
-      return reply(403, { error: 'Your account is suspended. Ask the network admin to restore it.' });
+      return reply(403, { error: 'Your account is suspended. Ask your headteacher to restore it.' });
     }
 
     const body = await req.json().catch(() => ({}));

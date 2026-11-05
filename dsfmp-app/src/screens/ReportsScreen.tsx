@@ -78,12 +78,9 @@ async function fetchAllRows<T>(
 
 export default function ReportsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, schools, isNetworkAdmin } = useSchool();
-  // Network admins can report on the selected school or the whole network.
-  const [scope, setScope] = useState<'school' | 'all'>('school');
-  const allSchools = isNetworkAdmin && scope === 'all';
-  const schoolIds = allSchools ? schools.map((s) => s.school_id) : [school.school_id];
-  const schoolKey = schoolIds.join(',');
+  const { school } = useSchool();
+  const schoolIds = [school.school_id];
+  const schoolKey = school.school_id;
   const [range, setRange] = useState<RangeKey>('week');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +193,6 @@ export default function ReportsScreen({ navigation }: any) {
 
   const totalAttendance = mealTotals.breakfast + mealTotals.lunch + mealTotals.supper;
   const busiestDay = Math.max(1, ...days.map((d) => d.total));
-  const schoolName = (id: string) => schools.find((s) => s.school_id === id)?.name ?? '';
   const lowStock = items.filter(
     (i) => (i.reorder_level ?? 0) > 0 && i.quantity_available <= (i.reorder_level ?? 0)
   );
@@ -216,18 +212,6 @@ export default function ReportsScreen({ navigation }: any) {
         onValueChange={(r) => setRange(r as RangeKey)}
         buttons={RANGES.map((r) => ({ value: r.key, label: r.label }))}
       />
-
-      {isNetworkAdmin && schools.length > 1 && (
-        <SegmentedButtons
-          style={styles.scopeSegment}
-          value={scope}
-          onValueChange={(s) => setScope(s as typeof scope)}
-          buttons={[
-            { value: 'school', label: school.name, icon: 'school-outline' },
-            { value: 'all', label: 'All schools', icon: 'domain' },
-          ]}
-        />
-      )}
 
       {error && <HelperText type="error">{error}</HelperText>}
 
@@ -302,7 +286,7 @@ export default function ReportsScreen({ navigation }: any) {
               <List.Item
                 title={e.item.item_name}
                 description={
-                  (allSchools ? `${schoolName(e.item.school_id)} · ` : '') +
+
                   `used at ${e.meals.toLocaleString()} ${e.meals === 1 ? 'meal' : 'meals'}`
                 }
                 right={() => (
@@ -336,7 +320,7 @@ export default function ReportsScreen({ navigation }: any) {
                   title={i.item_name}
                   description={[
                     formatPacks(i.quantity_available, { unit: i.unit ?? '', pack_size: i.pack_size }),
-                    (allSchools ? `${schoolName(i.school_id)} · ` : '') +
+
                       `Reorder at ${formatQty(i.reorder_level ?? 0, i.unit)}`,
                   ]
                     .filter(Boolean)
@@ -364,7 +348,6 @@ export default function ReportsScreen({ navigation }: any) {
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background },
   content: { padding: 20 },
-  scopeSegment: { marginTop: 10 },
   sectionTitle: { fontWeight: '700', marginTop: 28, marginBottom: 10, color: c.text },
   tiles: { flexDirection: 'row', gap: 8 },
   tile: { flex: 1, borderRadius: 16 },

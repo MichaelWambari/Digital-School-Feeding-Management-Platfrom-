@@ -5,6 +5,12 @@
   -- Meal_Attendance, Food_Distribution, Reports, NFC_Tag_Logs).
   --
   -- Run this in the Supabase SQL Editor: Project > SQL Editor > New query
+  --
+  -- This is the base schema, up to fix 008. For a fresh database, run
+  -- it and then every fix from 009 on (supabase/fixes/009_*.sql, ...)
+  -- in number order. Fix 009 makes each school independent and run by
+  -- its headteacher, retires the central store described below and
+  -- replaces the row level security policies.
   -- ============================================================
 
   create extension if not exists "pgcrypto";
@@ -34,7 +40,23 @@
   drop function if exists public.set_school_from_beneficiary() cascade;
   drop function if exists public.set_school_from_item() cascade;
   drop function if exists public.set_distribution_school() cascade;
+  -- added by fix 009
+  drop function if exists public.is_platform_admin() cascade;
+  drop function if exists public.is_school_member(uuid) cascade;
+  drop function if exists public.has_school_permission(uuid, text) cascade;
+  drop function if exists public.my_permissions() cascade;
+  drop function if exists public.add_default_permissions() cascade;
+  drop function if exists public.keep_a_headteacher() cascade;
+  drop function if exists public.audit_change() cascade;
+  drop function if exists public.record_stock_received(uuid, numeric, text, text) cascade;
+  drop function if exists public.update_staff(uuid, text, text, text) cascade;
+  drop function if exists public.password_changed() cascade;
+  drop function if exists public.list_schools() cascade;
+  drop function if exists public.set_school_status(uuid, text) cascade;
 
+  drop table if exists audit_logs cascade;
+  drop table if exists school_role_permissions cascade;
+  drop function if exists public.permission_codes() cascade;
   drop table if exists nfc_tag_logs cascade;
   drop table if exists reports cascade;
   drop table if exists inventory_transactions cascade;

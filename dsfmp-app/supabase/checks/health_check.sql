@@ -9,7 +9,8 @@ expected_tables(t) as (
   values ('schools'), ('users'), ('beneficiaries'), ('nfc_devices'), ('food_items'),
          ('central_transactions'), ('food_distribution'), ('inventory_items'),
          ('food_consumption'), ('inventory_transactions'), ('meal_attendance'),
-         ('reports'), ('nfc_tag_logs'), ('login_codes')
+         ('reports'), ('nfc_tag_logs'), ('login_codes'), ('school_role_permissions'),
+         ('audit_logs')
 ),
 tbl as (
   select e.t, c.oid is not null as present, coalesce(c.relrowsecurity, false) as rls,
@@ -69,10 +70,12 @@ from expected_triggers
 union all
 select 4, 'Structure', 'Function ' || f || ' exists',
        case when exists (select 1 from fn where proname = f) then 'OK' else 'FAIL' end, ''
-from unnest(array['handle_new_user', 'session_verified', 'is_network_admin', 'can_view_school', 'has_school_role',
+from unnest(array['handle_new_user', 'session_verified', 'is_platform_admin', 'is_school_member',
+                  'can_view_school', 'has_school_role', 'has_school_permission', 'my_permissions',
                   'record_nfc_scan', 'apply_inventory_transaction', 'apply_central_transaction',
                   'log_dispatch_as_central_transaction', 'log_consumption_as_transaction',
-                  'receive_distribution', 'cancel_distribution', 'list_staff', 'update_staff',
+                  'receive_distribution', 'record_stock_received', 'list_staff', 'update_staff',
+                  'list_schools', 'set_school_status', 'keep_a_headteacher', 'audit_change',
                   'set_school_from_beneficiary', 'set_school_from_item']) f
 union all
 select 5, 'Structure', 'Security definer functions pin search_path',
@@ -97,18 +100,29 @@ union all
 select 9, 'Structure', 'Fix 004: central store and food used per meal',
        case when to_regclass('public.food_consumption') is not null then 'OK' else 'FAIL' end,
        'run supabase/fixes/004 if FAIL'
+union all
+select 9, 'Structure', 'Fix 009: independent schools run by their headteacher',
+       case when to_regclass('public.school_role_permissions') is not null then 'OK' else 'FAIL' end,
+       'run supabase/fixes/009 if FAIL'
 
 -- ---------- SCHOOLS ----------
 union all
 select 15, 'Schools', 'Schools', 'INFO',
-       coalesce(string_agg(name || case when status = 'active' then '' else ' (inactive)' end, ', '
+       coalesce(string_agg(name || case when status = 'active' then '' else ' (suspended)' end, ', '
                            order by name), 'no schools')
 from schools
 union all
-select 16, 'Schools', 'Staff assigned to a school',
+select 16, 'Schools', 'Every school has an active headteacher',
        case when count(*) = 0 then 'OK' else 'WARN' end,
-       count(*) || ' non-network-admin users with no school (they see nothing until assigned)'
-from public.users where role <> 'network_admin' and school_id is null
+       coalesce('no headteacher at: ' || string_agg(s.name, ', ' order by s.name), 'all have one')
+from schools s
+where not exists (select 1 from public.users u where u.school_id = s.school_id
+                  and u.role = 'headteacher' and u.status = 'active')
+union all
+select 16, 'Schools', 'Logins with no access yet',
+       case when count(*) = 0 then 'OK' else 'INFO' end,
+       count(*) || ' logins with no role (they see nothing until a school adds them as staff)'
+from public.users where role is null
 union all
 select 17, 'Schools', 'Attendance filed under the student''s school',
        case when count(*) = 0 then 'OK' else 'FAIL' end,
@@ -138,12 +152,12 @@ select 10, 'Accounts', 'Every login has a users profile',
 from auth.users a where not exists (select 1 from public.users u where u.user_id = a.id)
 union all
 select 11, 'Accounts', 'Users per role', 'INFO',
-       coalesce(string_agg(role || ': ' || n, ', '), 'no users')
+       coalesce(string_agg(coalesce(role, 'no role') || ': ' || n, ', '), 'no users')
 from (select role, count(*) n from public.users group by role order by role) r
 union all
-select 12, 'Accounts', 'At least one active admin or network admin',
-       case when count(*) > 0 then 'OK' else 'WARN' end, count(*) || ' active admins'
-from public.users where role in ('admin', 'network_admin') and status = 'active'
+select 12, 'Accounts', 'At least one active platform admin',
+       case when count(*) > 0 then 'OK' else 'WARN' end, count(*) || ' active platform admins'
+from public.users where role = 'platform_admin' and status = 'active'
 union all
 select 13, 'Accounts', 'Profiles still named "New User"',
        case when count(*) = 0 then 'OK' else 'WARN' end,
@@ -243,14 +257,11 @@ where not exists (select 1 from inventory_transactions t where t.consumption_id 
   and c.created_at >= coalesce((select min(created_at) from inventory_transactions
                                 where consumption_id is not null), now())
 union all
-select 55, 'Inventory', 'Central store matches its history: ' || item_name,
+select 55, 'Inventory', 'Old central store matches its history: ' || item_name,
        case when quantity_available = from_history then 'OK' else 'FAIL' end,
        'stored ' || quantity_available || ', history says ' || from_history
 from central_stock
-union all
-select 56, 'Inventory', 'Central store low on stock', case when count(*) = 0 then 'OK' else 'WARN' end,
-       coalesce(string_agg(item_name || ' (' || quantity_available || ')', ', '), 'none')
-from central_stock where quantity_available <= reorder_level and reorder_level > 0
+
 union all
 select 53, 'Inventory', 'Low-stock items', case when count(*) = 0 then 'OK' else 'WARN' end,
        coalesce(string_agg(item_name || ' (' || quantity_available || ')', ', '), 'none')
@@ -263,7 +274,7 @@ from inventory_transactions where recorded_by is null
 
 -- ---------- DISTRIBUTION & REPORTS ----------
 union all
-select 60, 'Distribution', 'Dispatches to schools', 'INFO',
+select 60, 'Distribution', 'Dispatches from the old central store', 'INFO',
        count(*) || ' total, ' || count(*) filter (where status = 'in_transit') || ' in transit, '
        || count(*) filter (where status = 'cancelled') || ' cancelled'
 from food_distribution

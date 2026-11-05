@@ -1,20 +1,29 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
-import { ActivityIndicator, Divider, HelperText, Text } from 'react-native-paper';
+import { ActivityIndicator, Divider, HelperText, Searchbar, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import CentralStoreScreen from './CentralStoreScreen';
 import { FadeInScrollView } from '../components/Motion';
-import { Button, ListItem } from '../components/Paper';
-import { EmptyText, Field, MovementRow, ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
-import { formatPacks, formatQty } from '../lib/units';
+import { Button, Chip, ListItem } from '../components/Paper';
+import {
+  EmptyText,
+  Field,
+  MovementRow,
+  QuantityField,
+  ScreenHeader,
+  StatCard,
+  StatusPill,
+} from '../components/ScreenParts';
+import { formatPacks, formatQty, toBaseQuantity } from '../lib/units';
+
+type Food = { food_id: string; item_name: string; unit: string; pack_size?: number | null };
 
 type Item = {
   item_id: string;
   quantity_available: number;
   reorder_level: number | null;
-  food_items: { item_name: string; unit: string; pack_size?: number | null };
+  food_items: Food;
 };
 
 type Transaction = {
@@ -22,6 +31,8 @@ type Transaction = {
   transaction_type: 'received' | 'used';
   quantity: number;
   transaction_date: string;
+  supplier_name?: string | null;
+  distribution_id: string | null;
   food_consumption: { meal_type: string } | null;
 };
 
@@ -31,27 +42,22 @@ const MEAL_LABELS: Record<string, string> = {
   supper: 'supper',
 };
 
-const NO_PERMISSION = 'Only admins and inventory officers can change reorder levels.';
+const NO_PERMISSION = 'Only the headteacher can change reorder levels.';
 const CONNECTION_ERROR = 'Unable to connect. Check your connection and try again.';
 
 function isLowStock(item: Item) {
   return (item.reorder_level ?? 0) > 0 && item.quantity_available <= (item.reorder_level ?? 0);
 }
 
-
-// Network admins manage the central store; school staff see their school's stock.
-export default function InventoryScreen(props: any) {
-  const { isNetworkAdmin } = useSchool();
-  return isNetworkAdmin ? <CentralStoreScreen {...props} /> : <SchoolInventoryScreen {...props} />;
-}
-
-function SchoolInventoryScreen({ navigation }: any) {
+// The school's stock of each food.
+export default function InventoryScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school } = useSchool();
+  const { school, can } = useSchool();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [receiving, setReceiving] = useState(false);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -73,6 +79,18 @@ function SchoolInventoryScreen({ navigation }: any) {
     loadItems();
   }, [loadItems]);
 
+  if (receiving) {
+    return (
+      <ReceiveView
+        onBack={() => setReceiving(false)}
+        onReceived={async () => {
+          setReceiving(false);
+          await loadItems();
+        }}
+      />
+    );
+  }
+
   const detailItem = detailId ? items.find((i) => i.item_id === detailId) : undefined;
   if (detailItem) {
     return (
@@ -88,7 +106,17 @@ function SchoolInventoryScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Inventory" onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title="Inventory"
+        onBack={() => navigation.goBack()}
+        right={
+          can('verify_deliveries') && (
+            <Button mode="text" icon="truck-check-outline" onPress={() => setReceiving(true)}>
+              Received
+            </Button>
+          )
+        }
+      />
 
       <StatCard
         value={items.length}
@@ -97,8 +125,8 @@ function SchoolInventoryScreen({ navigation }: any) {
       />
 
       <Text variant="bodySmall" style={styles.hint}>
-        Stock arrives from the central store (confirm deliveries on the Distribution screen) and
-        goes down as food used at meals is recorded there.
+        Stock goes up when food received is recorded here, and down as food used at meals is
+        recorded on the Distribution screen.
       </Text>
 
       {loadError && <HelperText type="error">Could not load inventory: {loadError}</HelperText>}
@@ -112,7 +140,7 @@ function SchoolInventoryScreen({ navigation }: any) {
         }
         ListEmptyComponent={
           loading ? undefined : (
-            <EmptyText>No stock yet. Food appears here once a delivery is confirmed.</EmptyText>
+            <EmptyText>No stock yet. Food appears here once food received is recorded.</EmptyText>
           )
         }
         renderItem={({ item }) => (
@@ -143,6 +171,129 @@ function SchoolInventoryScreen({ navigation }: any) {
   );
 }
 
+// Recording food that arrived at the school, after checking the amount.
+function ReceiveView({ onBack, onReceived }: { onBack: () => void; onReceived: () => Promise<void> }) {
+  const { styles } = useThemedStyles(makeStyles);
+  const [foods, setFoods] = useState<Food[]>([]);
+  const [search, setSearch] = useState('');
+  const [food, setFood] = useState<Food | null>(null);
+  const [quantity, setQuantity] = useState('');
+  const [inPacks, setInPacks] = useState(false);
+  const [supplier, setSupplier] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from('food_items')
+      .select('*')
+      .order('item_name')
+      .then(({ data, error }) => {
+        if (error) setError(`Could not load the food list: ${error.message}`);
+        else setFoods((data ?? []) as Food[]);
+      });
+  }, []);
+
+  function choose(f: Food) {
+    setFood(f);
+    setInPacks(!!f.pack_size);
+    setError(null);
+  }
+
+  async function handleSave() {
+    if (!food) return;
+    const qty = toBaseQuantity(quantity, inPacks, food);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError('Enter the amount that arrived.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc('record_stock_received', {
+        p_food_id: food.food_id,
+        p_quantity: qty,
+        p_supplier_name: supplier,
+        p_note: note,
+      });
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      await onReceived();
+    } catch {
+      setError(CONNECTION_ERROR);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const term = search.trim().toLowerCase();
+  const shown = term ? foods.filter((f) => f.item_name.toLowerCase().includes(term)) : foods;
+
+  return (
+    <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <ScreenHeader title="Food received" onBack={onBack} backLabel="Cancel" backDisabled={saving} />
+      <Text variant="bodySmall" style={styles.hint}>
+        Weigh or count what arrived and record the amount you checked. It is added to stock straight away.
+      </Text>
+
+      <Text variant="labelLarge" style={styles.label}>Food</Text>
+      <Searchbar
+        value={search}
+        onChangeText={setSearch}
+        placeholder="Search the food list"
+        elevation={0}
+        style={styles.search}
+      />
+      <View style={styles.chipWrap}>
+        {shown.map((f) => (
+          <Chip
+            key={f.food_id}
+            mode={food?.food_id === f.food_id ? 'flat' : 'outlined'}
+            selected={food?.food_id === f.food_id}
+            onPress={() => choose(f)}
+          >
+            {f.item_name}
+          </Chip>
+        ))}
+      </View>
+
+      {food && (
+        <>
+          <QuantityField
+            style={styles.quantity}
+            label="Amount received"
+            value={quantity}
+            onChangeText={setQuantity}
+            inPacks={inPacks}
+            onInPacksChange={setInPacks}
+            food={food}
+          />
+          <Field label="Supplier" value={supplier} onChangeText={setSupplier} placeholder="Who delivered it" />
+          <Field label="Note" value={note} onChangeText={setNote} placeholder="e.g. delivery note number" />
+        </>
+      )}
+
+      <HelperText type="error" visible={!!error}>
+        {error}
+      </HelperText>
+      <Button
+        mode="contained"
+        icon="package-variant-closed-plus"
+        onPress={handleSave}
+        loading={saving}
+        disabled={saving || !food}
+        contentStyle={styles.buttonContent}
+      >
+        Add to stock
+      </Button>
+      <View style={styles.bottomSpacer} />
+    </FadeInScrollView>
+  );
+}
+
 function StockDetailView({
   item,
   onBack,
@@ -153,8 +304,7 @@ function StockDetailView({
   onChanged: () => Promise<void>;
 }) {
   const { styles } = useThemedStyles(makeStyles);
-  const { profile } = useSchool();
-  const canEdit = profile.role === 'admin' || profile.role === 'inventory_officer';
+  const { isHeadteacher } = useSchool();
   const unit = item.food_items.unit;
   const [reorderLevel, setReorderLevel] = useState(String(item.reorder_level ?? 0));
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +316,7 @@ function StockDetailView({
     setHistoryLoading(true);
     const { data, error } = await supabase
       .from('inventory_transactions')
-      .select('transaction_id, transaction_type, quantity, transaction_date, food_consumption(meal_type)')
+      .select('*, food_consumption(meal_type)')
       .eq('item_id', item.item_id)
       .order('created_at', { ascending: false })
       .limit(15);
@@ -231,7 +381,7 @@ function StockDetailView({
         tone={isLowStock(item) ? 'warning' : 'default'}
       />
 
-      {canEdit && (
+      {isHeadteacher && (
         <>
           <View style={styles.inlineRow}>
             <Field
@@ -274,7 +424,11 @@ function StockDetailView({
               first={index === 0}
               title={
                 received
-                  ? 'Received from central store'
+                  ? t.supplier_name
+                    ? `Received from ${t.supplier_name}`
+                    : t.distribution_id
+                      ? 'Received from the old central store'
+                      : 'Received'
                   : meal
                     ? `Used at ${MEAL_LABELS[meal] ?? meal}`
                     : 'Used'
@@ -294,6 +448,11 @@ function StockDetailView({
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
   sectionTitle: { marginTop: 16, marginBottom: 4, color: c.text },
+  label: { color: c.textSecondary, marginBottom: 8, marginTop: 16 },
+  search: { backgroundColor: c.surface, marginBottom: 12 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  quantity: { marginTop: 16 },
+  buttonContent: { paddingVertical: 6 },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   inlineInput: { flex: 1 },
   // Lines the button up with the field, which has a gap above it.

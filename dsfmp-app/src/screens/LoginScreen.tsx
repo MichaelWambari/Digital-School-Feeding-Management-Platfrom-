@@ -159,7 +159,7 @@ export default function LoginScreen() {
             Continue with Google
           </Button>
           <Text variant="bodySmall" style={styles.hint}>
-            Use the Google account with the email your network admin added.
+            Use the Google account with the email your school added for you.
           </Text>
         </Surface>
       </FadeIn>
@@ -178,7 +178,7 @@ function describeAuthError(message: string) {
   const m = message.toLowerCase();
   if (m.includes('invalid login credentials')) return 'Wrong email or password.';
   if (m.includes('signups not allowed') || m.includes('signup is disabled')) {
-    return "This Google account isn't registered. Ask your network admin to add your email in Staff.";
+    return "This Google account isn't registered. Ask your headteacher to add your email in Staff.";
   }
   if (m.includes('provider is not enabled')) {
     return 'Google sign-in is not turned on for this app yet.';

@@ -27,11 +27,11 @@
 begin;
 
 -- Deliveries, attendance and food used are recorded as the first
--- active network admin (or admin), so records say who entered them.
+-- active headteacher (or platform admin), so records say who entered them.
 create temp table seed_user on commit drop as
   select user_id from public.users
-  where status = 'active' and role in ('network_admin', 'admin')
-  order by role desc -- 'network_admin' sorts before 'admin'
+  where status = 'active' and role in ('platform_admin', 'headteacher', 'network_admin', 'admin')
+  order by role = 'headteacher' desc, role desc -- a headteacher if there is one
   limit 1;
 
 -- ------------------------------------------------------------

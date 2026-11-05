@@ -4,14 +4,13 @@ import { Card, Divider, HelperText, List, Text, TextInput } from 'react-native-p
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import NetworkDistributionScreen from './NetworkDistributionScreen';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, Chip, SegmentedButtons } from '../components/Paper';
 import { Field, ScreenHeader, StatCard } from '../components/ScreenParts';
 import { formatPacks, formatQty, formatStock } from '../lib/units';
 
-// A school's side of food distribution: food received from the central
-// store, and food used at each meal.
+// Food used at each meal, and dispatches from the old central store
+// (those still in transit can be received; nothing new is dispatched).
 
 type Item = {
   item_id: string;
@@ -60,17 +59,7 @@ function formatDay(date: string) {
   });
 }
 
-// Network admins see dispatches and every school's use; school staff see their own school.
-export default function DistributionScreen(props: any) {
-  const { isNetworkAdmin } = useSchool();
-  return isNetworkAdmin ? (
-    <NetworkDistributionScreen {...props} />
-  ) : (
-    <SchoolDistributionScreen {...props} />
-  );
-}
-
-function SchoolDistributionScreen({ navigation }: any) {
+export default function DistributionScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
   const [tab, setTab] = useState<'usage' | 'deliveries'>('usage');
 
@@ -83,7 +72,7 @@ function SchoolDistributionScreen({ navigation }: any) {
         onValueChange={(t) => setTab(t as typeof tab)}
         buttons={[
           { value: 'usage', label: 'Food used', icon: 'silverware-fork-knife' },
-          { value: 'deliveries', label: 'Received from source', icon: 'truck-outline' },
+          { value: 'deliveries', label: 'Old dispatches', icon: 'truck-outline' },
         ]}
       />
 
@@ -94,7 +83,9 @@ function SchoolDistributionScreen({ navigation }: any) {
 
 function UsageTab() {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school } = useSchool();
+  const { school, profile } = useSchool();
+  // The database lets the headteacher and coordinators record food used.
+  const canRecord = profile.role === 'headteacher' || profile.role === 'coordinator';
   const [daysAgo, setDaysAgo] = useState<0 | 1>(0);
   const [servedMeals, setServedMeals] = useState<MealType[]>([...MEAL_TYPES]);
   const [mealType, setMealType] = useState<MealType>('lunch');
@@ -285,7 +276,11 @@ function UsageTab() {
 
       {!loading && items.length === 0 ? (
         <Text variant="bodyMedium" style={styles.emptyLeft}>
-          No food in stock yet. Confirm a delivery under "Received from source" first.
+          No food in stock yet. Record food received on the Inventory screen first.
+        </Text>
+      ) : !canRecord ? (
+        <Text variant="bodyMedium" style={styles.emptyLeft}>
+          The headteacher or a coordinator records food used after each meal.
         </Text>
       ) : (
         items.map((item, index) => {
@@ -332,7 +327,7 @@ function UsageTab() {
         {error}
       </HelperText>
 
-      {items.length > 0 && (
+      {items.length > 0 && canRecord && (
         <Button
           mode="contained"
           icon={confirming ? 'check-all' : 'content-save-outline'}
@@ -380,8 +375,8 @@ function UsageTab() {
 
 function DeliveriesTab() {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, profile } = useSchool();
-  const canConfirm = profile.role === 'admin' || profile.role === 'inventory_officer';
+  const { school, can } = useSchool();
+  const canConfirm = can('verify_deliveries');
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -461,7 +456,9 @@ function DeliveriesTab() {
 
       <Text variant="titleSmall" style={[styles.sectionTitle, styles.firstSection]}>On the way</Text>
       {inTransit.length === 0 ? (
-        <Text variant="bodyMedium" style={styles.emptyLeft}>No deliveries on the way.</Text>
+        <Text variant="bodyMedium" style={styles.emptyLeft}>
+          Nothing on the way. The central store is closed; record new food on the Inventory screen.
+        </Text>
       ) : (
         inTransit.map((d) => {
           const unit = d.food_items.unit;
@@ -478,7 +475,7 @@ function DeliveriesTab() {
               <Card.Content>
                 {!canConfirm ? (
                   <Text variant="bodySmall" style={styles.meta}>
-                    An admin or inventory officer confirms it on arrival.
+                    Staff who confirm deliveries record it on arrival.
                   </Text>
                 ) : isConfirming ? (
                   <>
