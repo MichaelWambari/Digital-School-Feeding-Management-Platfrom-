@@ -1,0 +1,247 @@
+// ============================================================
+// DSFMP NFC reader - ESP32 firmware (real hardware, PN532)
+//
+// The same reader as firmware/wokwi, with a real PN532 NFC reader
+// in place of the demo buttons. Each card tap calls the
+// record_nfc_scan database function over HTTPS and shows the
+// result on the LCD, LEDs and buzzer.
+//
+// The PN532 runs in I2C mode (switch 1 ON, switch 2 OFF) and
+// shares SDA/SCL with the LCD. A card ID typed into the Serial
+// Monitor still counts as a tap, for testing without a card.
+// ============================================================
+
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <Wire.h>
+#include <ArduinoJson.h>
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_PN532.h>
+
+// ---------------- Settings ----------------
+
+// The school's Wi-Fi (2.4 GHz only).
+const char *WIFI_SSID = "YOUR-WIFI-NAME";
+const char *WIFI_PASSWORD = "YOUR-WIFI-PASSWORD";
+
+// Copy both values from dsfmp-app/src/lib/supabase.ts.
+const char *SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+
+// Must match a row in nfc_devices. The demo seed registers
+// reader-jasiri-01, reader-tumaini-01, reader-upendo-01 and reader-baraka-01.
+const char *DEVICE_ID = "reader-tumaini-01";
+
+// PN532 IRQ and RST. SDA/SCL are the ESP32 defaults (21/22).
+const int PN532_IRQ_PIN = 4;
+const int PN532_RST_PIN = 15;
+
+const int GREEN_LED_PIN = 25;
+const int RED_LED_PIN = 26;
+const int BUZZER_PIN = 33;
+
+// A card left on the reader is read again and again; ignore
+// repeat reads of the same card for this long.
+const unsigned long REPEAT_TAP_MS = 3000;
+
+// ------------------------------------------
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+Adafruit_PN532 nfc(PN532_IRQ_PIN, PN532_RST_PIN);
+String serialBuffer;
+String lastCard;
+unsigned long lastCardAt = 0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+
+  startNfc();
+  connectWifi();
+  Serial.println();
+  Serial.printf("Reader %s ready.\n", DEVICE_ID);
+  Serial.println("Tap a card, or type a card ID and press Enter.");
+  showIdle();
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) connectWifi();
+
+  String card = readCard();
+  if (card.length() > 0) {
+    handleTap(card);
+    showIdle();
+  }
+}
+
+// Stops with a message on the LCD if the PN532 doesn't answer,
+// since the reader is no use without it.
+void startNfc() {
+  nfc.begin();
+  uint32_t version = nfc.getFirmwareVersion();
+  if (!version) {
+    Serial.println("PN532 not found. Check the wiring, that the switches are");
+    Serial.println("set to I2C (1 ON, 2 OFF), and power-cycle the board.");
+    showMessage("NFC not found", "Check wiring");
+    while (true) delay(1000);
+  }
+  Serial.printf("PN532 found, firmware %d.%d\n", (version >> 16) & 0xFF, (version >> 8) & 0xFF);
+  nfc.SAMConfig();
+}
+
+// Returns the ID of a card that was just tapped, or "" if none.
+String readCard() {
+  uint8_t uid[7];
+  uint8_t uidLength;
+  // Short timeout so the Serial Monitor is still checked between reads.
+  if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 50)) {
+    String card;
+    for (uint8_t i = 0; i < uidLength; i++) {
+      if (uid[i] < 0x10) card += "0";
+      card += String(uid[i], HEX);
+    }
+    card.toUpperCase();
+
+    bool repeat = card == lastCard && millis() - lastCardAt < REPEAT_TAP_MS;
+    lastCard = card;
+    lastCardAt = millis();
+    if (!repeat) return card;
+  }
+
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\r' || c == '\n') {
+      String card = serialBuffer;
+      serialBuffer = "";
+      card.trim();
+      if (card.length() > 0) return card;
+    } else {
+      serialBuffer += c;
+    }
+  }
+  return "";
+}
+
+void handleTap(const String &card) {
+  Serial.printf("\nCard %s tapped\n", card.c_str());
+  showMessage("Card read", card);
+
+  String firstName, error;
+  unsigned long started = millis();
+  bool ok = recordScan(card, firstName, error);
+  unsigned long elapsed = millis() - started;
+
+  if (ok) {
+    Serial.printf("OK: %s (%lu ms)\n", firstName.c_str(), elapsed);
+    showMessage("Welcome", firstName);
+    feedback(true);
+  } else {
+    Serial.printf("FAILED: %s (%lu ms)\n", error.c_str(), elapsed);
+    showMessage("Not recorded", describeError(error));
+    feedback(false);
+  }
+  delay(1500);
+  // Time the repeat guard from the end of the tap, not the read.
+  lastCardAt = millis();
+}
+
+// Calls record_nfc_scan. Returns true on success and sets firstName;
+// otherwise sets error to the function's error code or an HTTP/network one.
+bool recordScan(const String &card, String &firstName, String &error) {
+  WiFiClientSecure client;
+  // Skips certificate checks to keep the demo simple. A deployed reader
+  // should pin Supabase's root certificate with client.setCACert().
+  client.setInsecure();
+
+  HTTPClient http;
+  http.begin(client, String(SUPABASE_URL) + "/rest/v1/rpc/record_nfc_scan");
+  http.addHeader("apikey", SUPABASE_ANON_KEY);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(10000);
+
+  JsonDocument body;
+  body["p_nfc_tag_id"] = card;
+  body["p_device_id"] = DEVICE_ID;
+  body["p_mode"] = "attendance";
+  String payload;
+  serializeJson(body, payload);
+
+  int status = http.POST(payload);
+  String response = http.getString();
+  http.end();
+
+  if (status <= 0) {
+    error = "network_error";
+    return false;
+  }
+  if (status != 200) {
+    error = "http_" + String(status);
+    Serial.println(response);
+    return false;
+  }
+
+  JsonDocument result;
+  if (deserializeJson(result, response)) {
+    error = "bad_response";
+    return false;
+  }
+  if (result["success"] | false) {
+    firstName = result["first_name"] | "";
+    return true;
+  }
+  error = result["error"] | "unknown_error";
+  return false;
+}
+
+String describeError(const String &error) {
+  if (error == "unknown_tag") return "Unknown card";
+  if (error == "outside_meal_time") return "Not meal time";
+  if (error == "not_eligible") return "Not eligible";
+  if (error == "wrong_school") return "Wrong school";
+  if (error == "unregistered_or_inactive_device") return "Reader not reg.";
+  if (error == "inactive_school") return "School inactive";
+  if (error == "network_error") return "No connection";
+  return error.substring(0, 16);
+}
+
+void feedback(bool ok) {
+  int led = ok ? GREEN_LED_PIN : RED_LED_PIN;
+  digitalWrite(led, HIGH);
+  if (ok) {
+    tone(BUZZER_PIN, 2000, 150);
+  } else {
+    tone(BUZZER_PIN, 400, 150);
+    delay(200);
+    tone(BUZZER_PIN, 400, 150);
+  }
+  delay(600);
+  digitalWrite(led, LOW);
+}
+
+void connectWifi() {
+  showMessage("Connecting WiFi", WIFI_SSID);
+  Serial.printf("Connecting to %s", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.printf(" connected, IP %s\n", WiFi.localIP().toString().c_str());
+}
+
+void showIdle() {
+  showMessage("DSFMP reader", "Tap card...");
+}
+
+void showMessage(const String &line1, const String &line2) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(line1.substring(0, 16));
+  lcd.setCursor(0, 1);
+  lcd.print(line2.substring(0, 16));
+}
