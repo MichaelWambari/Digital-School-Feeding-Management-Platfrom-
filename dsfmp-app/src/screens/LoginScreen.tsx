@@ -60,6 +60,9 @@ export default function LoginScreen() {
 
       // On a phone, Google opens in a browser sheet that returns to the app.
       const redirectTo = Linking.createURL('auth-callback');
+      // Supabase only returns here if this address matches its Redirect URLs
+      // (e.g. exp://** for Expo Go); otherwise it goes to the Site URL.
+      if (__DEV__) console.log('Google sign-in returns to', redirectTo);
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo, skipBrowserRedirect: true, queryParams: { prompt: 'select_account' } },
