@@ -26,7 +26,8 @@ type FormState = {
   status: 'active' | 'suspended';
 };
 
-const ROLES: SchoolRole[] = ['headteacher', 'coordinator', 'inventory_officer', 'staff'];
+// New staff are coordinators; making one headteacher hands the school over.
+const ROLES: SchoolRole[] = ['coordinator', 'headteacher'];
 
 // The headteacher's list of their school's staff logins. New logins are
 // created by the manage-staff Edge Function; everything else goes through
@@ -111,7 +112,6 @@ export default function StaffScreen({ navigation }: any) {
           email,
           password: form.password,
           full_name: fullName,
-          role: form.role,
         });
         if (error) {
           setFormError(error);
@@ -165,7 +165,7 @@ export default function StaffScreen({ navigation }: any) {
     return (
       <FadeInScrollView style={styles.container} keyboardShouldPersistTaps="handled">
         <ScreenHeader
-          title={isNew ? 'Add staff' : 'Edit staff'}
+          title={isNew ? 'Add a coordinator' : 'Edit staff'}
           onBack={() => setEditing(null)}
           backLabel="Cancel"
           backDisabled={saving}
@@ -212,25 +212,36 @@ export default function StaffScreen({ navigation }: any) {
           </>
         )}
 
-        <Text variant="labelLarge" style={styles.label}>Role</Text>
-        <View style={styles.chipWrap}>
-          {ROLES.map((role) => (
-            <Chip
-              key={role}
-              mode={form.role === role ? 'flat' : 'outlined'}
-              selected={form.role === role}
-              onPress={() => setForm({ ...form, role })}
-              disabled={isSelf}
-            >
-              {ROLE_LABELS[role]}
-            </Chip>
-          ))}
-        </View>
-        <Text variant="bodySmall" style={styles.hint}>
-          {isSelf
-            ? "You can't change your own role or suspend yourself. To hand over, make someone else headteacher; they can then change your role."
-            : 'What each role may do is set under Permissions.'}
-        </Text>
+        {isNew ? (
+          <Text variant="bodySmall" style={styles.hint}>
+            They'll be the school's coordinator: students, attendance, the timetable and
+            inventory. What they may do is set under Permissions.
+          </Text>
+        ) : (
+          <>
+            <Text variant="labelLarge" style={styles.label}>Role</Text>
+            <View style={styles.chipWrap}>
+              {ROLES.map((role) => (
+                <Chip
+                  key={role}
+                  mode={form.role === role ? 'flat' : 'outlined'}
+                  selected={form.role === role}
+                  onPress={() => setForm({ ...form, role })}
+                  disabled={isSelf}
+                >
+                  {ROLE_LABELS[role]}
+                </Chip>
+              ))}
+            </View>
+            <Text variant="bodySmall" style={styles.hint}>
+              {isSelf
+                ? "You can't change your own role or suspend yourself. To hand the school over, make someone else headteacher; they can then change your role."
+                : form.role === 'headteacher'
+                ? 'A headteacher has full control of the school, including staff. Use this to hand the school over.'
+                : 'What a coordinator may do is set under Permissions.'}
+            </Text>
+          </>
+        )}
 
         {!isNew && (
           <>

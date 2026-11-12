@@ -4,20 +4,21 @@ import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { PressableScale } from '../components/Motion';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
+import CreateSchoolScreen from '../screens/CreateSchoolScreen';
 
-export type Role = 'platform_admin' | 'headteacher' | 'coordinator' | 'inventory_officer' | 'staff';
-export type SchoolRole = Exclude<Role, 'platform_admin'>;
+// The headteacher runs the school; the coordinator, whom the headteacher
+// adds, runs students, attendance, the timetable and inventory.
+export type Role = 'headteacher' | 'coordinator';
+export type SchoolRole = Role;
 
 export const ROLE_LABELS: Record<Role, string> = {
-  platform_admin: 'Platform admin',
   headteacher: 'Headteacher',
-  coordinator: 'Feeding coordinator',
-  inventory_officer: 'Inventory officer',
-  staff: 'Staff',
+  coordinator: 'Coordinator',
 };
 
-// What a school lets each role do (school_role_permissions, fix 009).
-// The headteacher can do all of these and more.
+// What a school lets the coordinator do (school_role_permissions). All of
+// them by default; the headteacher can turn some off. The headteacher can
+// do all of these and more.
 export type Permission =
   | 'view_students'
   | 'manage_students'
@@ -68,8 +69,7 @@ export type School = {
 
 type AccountValue = {
   profile: Profile;
-  // The user's school; null for the platform admin.
-  school: School | null;
+  school: School;
   permissions: Permission[];
   reload: () => Promise<void>;
 };
@@ -135,14 +135,12 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     load();
   }, [load]);
 
-  const usable =
-    profile &&
-    profile.status === 'active' &&
-    (profile.role === 'platform_admin' || (profile.role && school?.status === 'active'));
-
   const value = useMemo<AccountValue | null>(
-    () => (usable && profile ? { profile, school, permissions, reload: load } : null),
-    [usable, profile, school, permissions, load]
+    () =>
+      profile && profile.status === 'active' && profile.role && school?.status === 'active'
+        ? { profile, school, permissions, reload: load }
+        : null,
+    [profile, school, permissions, load]
   );
 
   if (loading) {
@@ -158,14 +156,19 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     return <ChangePasswordScreen onChanged={load} />;
   }
 
+  // A new account (a headteacher who just signed up) names its school.
+  if (!error && profile && profile.status === 'active' && !profile.role && !profile.school_id) {
+    return <CreateSchoolScreen defaultName={profile.full_name} onCreated={load} />;
+  }
+
   if (!value) {
     const message = error
       ? `Could not load your account: ${error}`
       : profile?.status === 'suspended'
       ? 'Your account is suspended. Ask your headteacher to restore it.'
       : school?.status === 'suspended'
-      ? `${school.name}'s account is suspended. Contact the platform administrator.`
-      : "Your login isn't linked to a school yet. Ask your headteacher to add you as staff.";
+      ? `${school.name}'s account is suspended.`
+      : "Your login isn't linked to a school.";
     return (
       <View style={styles.center}>
         <Text style={styles.message}>{message}</Text>
@@ -188,10 +191,9 @@ export function useAccount() {
   return value;
 }
 
-// For school screens: the user's school and what they may do there.
+// The user's school and what they may do there.
 export function useSchool() {
   const { profile, school, permissions, reload } = useAccount();
-  if (!school) throw new Error('useSchool is only for school staff');
   const can = (permission: Permission) => permissions.includes(permission);
   return { profile, school, permissions, can, isHeadteacher: profile.role === 'headteacher', reload };
 }

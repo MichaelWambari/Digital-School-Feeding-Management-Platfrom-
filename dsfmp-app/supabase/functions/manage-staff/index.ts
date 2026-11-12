@@ -5,14 +5,12 @@
 // service role key, which must never be inside the app, so the app
 // calls this function instead:
 //
-// A headteacher, for their own school's staff:
-//   { "action": "create", "email", "password", "full_name", "role" }
+// A headteacher, for their own school's coordinators:
+//   { "action": "create", "email", "password", "full_name" }
 //   { "action": "set_password", "user_id", "password" }
 //
-// The platform admin, to onboard a school with its first headteacher:
-//   { "action": "onboard_school",
-//     "school": { "name", "location", "county", "phone", "email", "registration_no", "timezone" },
-//     "headteacher": { "full_name", "email", "password" } }
+// Headteachers create their own accounts in the app and then their
+// school (create_my_school()), so they don't come through here.
 //
 // Logins made here must choose a new password at their first sign-in.
 // Listing and editing staff don't need this function: the app calls
@@ -25,8 +23,6 @@
 // ============================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-
-const SCHOOL_ROLES = ['headteacher', 'coordinator', 'inventory_officer', 'staff'];
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -63,14 +59,8 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    if (body.action === 'onboard_school') {
-      if (caller.role !== 'platform_admin') {
-        return reply(403, { error: 'Only the platform admin can onboard schools.' });
-      }
-      return await onboardSchool(body);
-    }
 
-    // Everything else is a headteacher managing their own (active) school.
+    // Only a headteacher, for their own (active) school.
     const schoolStatus = (caller.schools as { status?: string } | null)?.status;
     if (caller.role !== 'headteacher' || !caller.school_id || schoolStatus !== 'active') {
       return reply(403, { error: 'Only the headteacher can manage staff.' });
@@ -83,12 +73,12 @@ Deno.serve(async (req) => {
   }
 });
 
+// New staff are coordinators. (A coordinator can later be made
+// headteacher, to hand the school over, with update_staff().)
 async function createStaff(body: Record<string, unknown>, caller: Caller) {
-  const role = String(body.role ?? '');
-  if (!SCHOOL_ROLES.includes(role)) return reply(400, { error: 'Choose a role.' });
   const login = readLogin(body);
   if ('error' in login) return reply(400, login);
-  return await createLogin(login, role, caller.school_id!);
+  return await createLogin(login, 'coordinator', caller.school_id!);
 }
 
 async function setPassword(body: Record<string, unknown>, caller: Caller) {
@@ -112,50 +102,6 @@ async function setPassword(body: Record<string, unknown>, caller: Caller) {
     await admin.from('users').update({ must_change_password: true }).eq('user_id', userId);
   }
   return reply(200, { user_id: userId });
-}
-
-async function onboardSchool(body: Record<string, unknown>) {
-  const s = (body.school ?? {}) as Record<string, unknown>;
-  const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
-  const name = text(s.name);
-  if (!name) return reply(400, { error: 'The school name is required.' });
-  const timezone = text(s.timezone) ?? 'Africa/Nairobi';
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: timezone });
-  } catch {
-    return reply(400, { error: `Unknown timezone ${timezone}.` });
-  }
-  const login = readLogin((body.headteacher ?? {}) as Record<string, unknown>);
-  if ('error' in login) return reply(400, login);
-
-  const { data: school, error: schoolError } = await admin
-    .from('schools')
-    .insert({
-      name,
-      location: text(s.location),
-      county: text(s.county),
-      phone: text(s.phone),
-      email: text(s.email),
-      registration_no: text(s.registration_no),
-      timezone,
-    })
-    .select('school_id')
-    .single();
-  if (schoolError || !school) {
-    const taken = schoolError?.code === '23505';
-    return reply(taken ? 409 : 400, {
-      error: taken ? 'A school with that name already exists.' : schoolError?.message ?? 'Could not add the school.',
-    });
-  }
-
-  const created = await createLogin(login, 'headteacher', school.school_id);
-  if (created.status !== 200) {
-    // Don't leave a school behind without its headteacher.
-    await admin.from('schools').delete().eq('school_id', school.school_id);
-    return created;
-  }
-  const { user_id } = await created.clone().json();
-  return reply(200, { school_id: school.school_id, user_id });
 }
 
 type Login = { email: string; password: string; fullName: string };

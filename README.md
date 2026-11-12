@@ -12,13 +12,15 @@ row-level security). Runs on Android, iOS and the web.
 
 Each school uses DSFMP **independently**. Its students, staff, readers, food
 stock and records belong to it alone, and the database (row-level security)
-stops any school from seeing another's. The school's **headteacher** runs its
-account. A **platform admin** onboards schools and (soon) verifies
-suppliers, but can't see any school's records.
+stops any school from seeing another's. There is no central administrator:
+a **headteacher** creates an account in the app, names their school and runs
+it, and adds a **coordinator** to run things day to day.
 
 | Module | What it does |
 |---|---|
-| **Login** | Sign in with email and password, then a 6-digit code emailed to you, or with **Continue with Google**. Only people added by their school can sign in. A login created by someone else must choose its own password at its first sign-in. Sessions persist across app restarts. |
+| **Login** | Sign in with email and password, then a 6-digit code emailed to you, or with **Continue with Google**. A new headteacher taps **Create an account**; coordinators are added by their headteacher and don't sign up. A login created by someone else must choose its own password at its first sign-in. Sessions persist across app restarts. |
+| **Set up your school** | Shown once, to a new account: the headteacher enters their name and the school's name (and optionally county and area), which creates the school with a Monday–Friday timetable and makes them its headteacher. |
+| **Dashboard** (getting started) | Until they're done, the headteacher sees four first steps: set meal times and a dish with its serving, add students, record food in stock, add a coordinator. |
 | **Dashboard** | The school's name, active student count and a tile for each module the user may use, plus a light/dark/system theme switch. |
 | **Students** | Searchable list of the school's students with an add/edit form. Tap a student for their **feeding report**: meals attended (breakfast, lunch, supper) and the estimated nutrients provided (energy, protein, carbohydrates, fat, fibre, calcium, iron, zinc, vitamins A and C) per day and in total, over 7, 30 or 90 days, with a daily energy chart and meal-by-meal history. The estimates come from each dish's standard serving, not from what the student actually ate. |
 | **Food values** | (From the Timetable.) Nutrients per 100 g or 100 ml of each food, pre-filled with approximate values from the Kenya Food Composition Tables 2018. A school can enter its own values for a food, with their source. |
@@ -27,10 +29,9 @@ suppliers, but can't see any school's records.
 | **Inventory** | The school's stock, with low-stock warnings, a per-food reorder level (set by the headteacher) and the history of food received and used. **Received** records food that arrived, with the amount checked on arrival and who delivered it. A database trigger keeps every stock level correct and blocks using more than is in stock. |
 | **Distribution** | After each meal, record how much of each food was used. If the day's dish has a serving set, the amounts are filled in from students who attended × serving, to check and save; the app also shows the portion per student. Also lists dispatches from the old central store (see below); one still in transit can be received. |
 | **Reports** | For today, the last 7 days or the last 30 days: meals served per meal with average attendance %, a daily attendance chart, food used per item, and current stock with low-stock items flagged. |
-| **Staff** | *Headteacher only:* create logins for the school's staff, give each a role, suspend or restore them, and reset passwords. |
-| **Permissions** | *Headteacher only:* choose what the coordinator, inventory officer and staff roles may do at the school. |
+| **Staff** | *Headteacher only:* add coordinators (with a temporary password), suspend or restore them, and reset passwords. Making a coordinator headteacher hands the school over. |
+| **Permissions** | *Headteacher only:* choose what the coordinator may do (everything by default). |
 | **School** | The school's profile (name, registration number, contacts, timezone). Only the headteacher can change it. |
-| **Schools** | *Platform admin only:* onboard a school with its first headteacher, and suspend or restore a school's account. |
 | **NFC scanning** | Card readers (e.g. an ESP32) call one database function, `record_nfc_scan()`, to record a student's attendance at the current meal. Each reader belongs to a school and only accepts that school's cards. Every scan is logged for audit. |
 
 The network central store that used to supply schools is **retired**: nothing
@@ -44,14 +45,11 @@ Every user has one role, and the database enforces it with row-level security:
 | Role | Can do |
 |---|---|
 | `headteacher` | Everything at their school: profile, staff, permissions, students, meals, stock, readers, reports, and (soon) supplier choices and order confirmation. A school always keeps at least one active headteacher. |
-| `coordinator` | By default: manage students, record attendance and food used, manage meals, see stock, nutrition and reports |
-| `inventory_officer` | By default: see stock and orders, confirm deliveries, enter stock counts, see reports. Never approves or starts orders: reordering is automatic and orders are confirmed by the headteacher. |
-| `staff` | By default: see students and record attendance |
-| `platform_admin` | Onboard schools, suspend or restore them, keep the shared food list and (soon) verify suppliers. No access to any school's students, attendance, stock or reports. |
+| `coordinator` | Runs the school day to day: students and NFC cards, attendance, the timetable, dishes and servings, inventory (food received, food used) and reports. By default it may do all of these; it can't manage staff, choose suppliers or confirm orders. |
 
-The headteacher can change the defaults for each role on the **Permissions**
-screen (`school_role_permissions`). Managing staff, choosing suppliers and
-confirming orders can't be given away. A login with no role sees nothing.
+The headteacher can turn off what the coordinator may do on the **Permissions**
+screen (`school_role_permissions`). A login with no role sees only "Set up your
+school". Suppliers (still to be built) will be approved by each school itself.
 
 ### Meal timetable
 
@@ -88,17 +86,18 @@ dsfmp-app/                  The Expo app (run all commands from here)
                             use useAccount(), or useSchool() on school screens
     screens/                One file per module (Login, Dashboard, Students,
                             Attendance, Inventory, Distribution, Reports, Staff,
-                            Permissions, SchoolProfile); the platform admin has
-                            PlatformDashboard and Schools
+                            Permissions, SchoolProfile, Timetable, ...);
+                            CreateSchool is shown to a new account
     lib/manageStaff.ts      Calls the manage-staff Edge Function
     theme/ThemeContext.tsx  Light/dark/system colours; use makeStyles + useThemedStyles
   supabase/
     schema.sql              Base database up to fix 008 (run fixes 009+ after it)
     fixes/NNN_*.sql         Migrations for an existing database, run in number order
     checks/health_check.sql Read-only check of structure, links and data (OK/WARN/FAIL)
-    seed/demo_data.sql      Demo schools, students, readers, stock and a week of history
+    seed/demo_data.sql      Old demo data (network model); used by the local tests only
+    reset/fresh_start.sql   Deletes every school, record and login (run once, before fix 013)
     seed/staple_foods.sql   Twelve staple foods (old central-store version; don't run after fix 009)
-    functions/manage-staff/ Edge Function that creates logins, resets passwords and onboards schools
+    functions/manage-staff/ Edge Function that creates coordinators' logins and resets passwords
     functions/login-code/   Edge Function that emails and checks sign-in codes
   scripts/simulate-reader.mjs  NFC reader simulator (npm run simulate)
   firmware/wokwi/           ESP32 reader firmware, runnable in the Wokwi simulator
@@ -116,7 +115,7 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `school_role_permissions` | What each role may do at each school, set by the headteacher |
 | `beneficiaries` | Students at each school, with their NFC tag IDs |
 | `nfc_devices` | Registered card readers, each at one school |
-| `food_items` | The shared food list (name, unit: `kg` or `litres`, bag size), kept by the platform admin |
+| `food_items` | The food list (name, unit: `kg` or `litres`, bag size): shared foods (read-only) and each school's own |
 | `inventory_items` | Each school's stock of each food it has received |
 | `food_consumption` | Food a school used at one meal on one day |
 | `inventory_transactions` | School stock received (with the supplier) or used at meals. A trigger updates `inventory_items`. |
@@ -143,8 +142,8 @@ and triggers keep the stock levels in step. Every permission rule also
 requires `session_verified()`: a password login can't see or change anything
 until its emailed code is entered (`login_codes`), while Google logins need
 no code. Headteachers list and edit their staff with `list_staff()` and
-`update_staff()`; the platform admin uses `list_schools()` and
-`set_school_status()`. In the database, students are still called
+`update_staff()`; a new account creates its school with
+`create_my_school()`. In the database, students are still called
 `beneficiaries`. `nfc_tag_logs` deliberately has no foreign keys on the card
 and reader, so scans from unknown cards or unregistered readers are still
 recorded.
@@ -171,13 +170,11 @@ recorded.
 > an existing database, run only the files in `dsfmp-app/supabase/fixes/`
 > it doesn't have yet, in number order.
 
-3. Optional: run `dsfmp-app/supabase/seed/demo_data.sql` to load demo data.
-   It adds three more schools (Tumaini, Upendo and Baraka), each with
-   test students and NFC card IDs, a registered reader, opening stock, and a
-   week of past attendance and food used at meals, plus a reader for Jasiri
-   School. It leaves one rice dispatch to Tumaini in transit, ready to
-   receive. It only adds missing rows, so it's safe to run again or on a live
-   database. The demo schools have no headteacher until you add one (step 3).
+3. To start an existing database afresh, run
+   `dsfmp-app/supabase/reset/fresh_start.sql` **before** fix 013. It
+   permanently deletes every school, its records and every login (the food
+   list and nutrition values stay). `seed/demo_data.sql` belongs to the old
+   network model; don't run it on a live database.
 
 ### 2. Install and run
 
@@ -191,50 +188,31 @@ npx expo start --web  # or run in the browser at http://localhost:8081
 Your phone and computer must be on the same Wi-Fi network. If that doesn't
 work (on school or office networks, for example), use `npx expo start --tunnel`.
 
-### 3. Create the platform admin
+### 3. Headteachers, schools and coordinators
 
-1. In Supabase, go to **Authentication → Users → Add user → Create new
-   user**. Enter an email and password and tick **Auto Confirm User**. A
-   trigger adds a matching `users` row with no role.
-2. Make that user the platform admin in the **SQL Editor**:
+1. In Supabase, open **Authentication → Sign In / Providers** and turn **on**
+   "Allow new users to sign up", and turn **off** "Confirm email" (the app
+   checks the email itself with the 6-digit sign-in code, below).
+2. In the app, a headteacher taps **New headteacher? Create an account**,
+   enters their name, email and a password, then **Set up your school**:
+   the school's name, and optionally county and area. They are now its
+   headteacher, and the dashboard lists the first steps.
+3. Coordinators are added by the headteacher in **Staff → Add**, through the
+   `manage-staff` Edge Function (creating a login needs the service role
+   key, which must never be in the app):
+   1. In Supabase, open **Edge Functions → Deploy a new function → Via Editor**.
+   2. Name it `manage-staff`, paste the contents of
+      `dsfmp-app/supabase/functions/manage-staff/index.ts` and deploy.
+   3. In the function's settings, turn off **Verify JWT**. The function
+      checks the signed-in user itself.
 
-   ```sql
-   update public.users u set role = 'platform_admin', school_id = null
-   from auth.users a
-   where a.id = u.user_id and a.email = 'you@example.com';
-   ```
+   The headteacher enters the coordinator's name, email and a temporary
+   password; the coordinator chooses their own at their first sign-in. Tap
+   someone in the list to suspend them (they can still sign in but see
+   nothing) or set a new temporary password. To hand the school over, make a
+   coordinator headteacher; they can then change your role.
 
-A new database starts with one school, **Jasiri School**, with no
-headteacher. Give a user that role the same way
-(`set role = 'headteacher', school_id = (select school_id from schools where name = 'Jasiri School')`),
-or onboard new schools from the app (below).
-
-### 4. Onboarding schools and staff accounts
-
-Logins are created in the app, through the `manage-staff` Edge Function,
-because creating a login takes the service role key, which must never be in
-the app:
-
-1. In Supabase, open **Edge Functions → Deploy a new function → Via Editor**.
-2. Name it `manage-staff`, paste the contents of
-   `dsfmp-app/supabase/functions/manage-staff/index.ts` and deploy.
-   Supabase gives the function its URL and service role key automatically.
-3. In the function's settings, turn off **Verify JWT**. The function checks
-   the signed-in user itself.
-
-**Onboarding a school:** the platform admin opens **Schools → Onboard**, enters
-the school's details and its headteacher's name, email and a temporary
-password, and taps **Onboard school**. The school gets the default role
-permissions. Give the headteacher the email and password; they choose their
-own password when they first sign in, and from then on they run the school.
-
-**Staff:** the headteacher opens **Staff → Add**, enters the person's name,
-email and a temporary password, chooses their role and taps **Create login**.
-Tap someone in the list to change their role, suspend them (they can still
-sign in but see nothing) or set a new temporary password. To hand over the
-school, make someone else headteacher; they can then change your role.
-
-### 5. Sign-in codes
+### 4. Sign-in codes
 
 After a password sign-in, the app emails a 6-digit code that must be entered
 before that login can see anything. The database enforces this. Codes are
@@ -260,7 +238,7 @@ If codes don't arrive, the code screen shows Brevo's error. A common one is
 an unrecognised IP address: turn off **Security → Authorised IPs** in Brevo,
 because Supabase's servers don't have fixed addresses.
 
-### 6. Google sign-in
+### 5. Google sign-in
 
 Staff can tap **Continue with Google** instead of using a password and code.
 Google matches them to their account by email, so their Google email must be
@@ -284,9 +262,10 @@ the one added in Staff.
    redirects to IP addresses, so the phone lands on "localhost" instead. The
    tunnel gives a named address (`exp://…exp.direct`) that `exp://**` matches.
    The web app and installed builds (`dsfmp://`) aren't affected.
-5. Under **Authentication → Sign In / Providers**, turn off **Allow new users
-   to sign up**. Only people already added in Staff can then sign in. Staff
-   created in the app are not affected.
+5. Keep **Allow new users to sign up** on (section 3): a new headteacher can
+   start with Google too, and then sets up their school. A coordinator must
+   use the Google account with the email their headteacher added; any other
+   Google account becomes a new, separate headteacher account.
 
 ## Development notes
 
@@ -298,7 +277,7 @@ the one added in Staff.
   `school_id` when creating students; other tables fill it in automatically.
   Show or hide actions with `useSchool().can('permission')` (or
   `isHeadteacher`), matching the database's `has_school_permission()`.
-  The platform admin's screens use `useAccount()` and have no school.
+  A new account sees `CreateSchoolScreen` until it has a school.
 - Style screens with `makeStyles(c: Colors)` and `useThemedStyles` from
   `src/theme/ThemeContext.tsx` instead of hard-coding colours.
 - Database changes go in a new `supabase/fixes/NNN_description.sql` that is

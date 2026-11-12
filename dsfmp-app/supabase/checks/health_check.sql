@@ -70,12 +70,12 @@ from expected_triggers
 union all
 select 4, 'Structure', 'Function ' || f || ' exists',
        case when exists (select 1 from fn where proname = f) then 'OK' else 'FAIL' end, ''
-from unnest(array['handle_new_user', 'session_verified', 'is_platform_admin', 'is_school_member',
+from unnest(array['handle_new_user', 'session_verified', 'create_my_school', 'is_school_member',
                   'can_view_school', 'has_school_role', 'has_school_permission', 'my_permissions',
                   'record_nfc_scan', 'apply_inventory_transaction', 'apply_central_transaction',
                   'log_dispatch_as_central_transaction', 'log_consumption_as_transaction',
                   'receive_distribution', 'record_stock_received', 'list_staff', 'update_staff',
-                  'list_schools', 'set_school_status', 'keep_a_headteacher', 'audit_change',
+                  'food_usable_by', 'keep_a_headteacher', 'audit_change',
                   'set_school_from_beneficiary', 'set_school_from_item']) f
 union all
 select 5, 'Structure', 'Security definer functions pin search_path',
@@ -155,9 +155,9 @@ select 11, 'Accounts', 'Users per role', 'INFO',
        coalesce(string_agg(coalesce(role, 'no role') || ': ' || n, ', '), 'no users')
 from (select role, count(*) n from public.users group by role order by role) r
 union all
-select 12, 'Accounts', 'At least one active platform admin',
-       case when count(*) > 0 then 'OK' else 'WARN' end, count(*) || ' active platform admins'
-from public.users where role = 'platform_admin' and status = 'active'
+select 12, 'Accounts', 'Logins without a school',
+       case when count(*) = 0 then 'OK' else 'INFO' end, count(*) || ' accounts that signed up but have not created their school yet'
+from public.users where school_id is null
 union all
 select 13, 'Accounts', 'Profiles still named "New User"',
        case when count(*) = 0 then 'OK' else 'WARN' end,

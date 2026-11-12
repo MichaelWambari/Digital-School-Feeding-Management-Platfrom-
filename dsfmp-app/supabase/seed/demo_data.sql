@@ -1,6 +1,12 @@
 -- ============================================================
 -- DSFMP demo data
 --
+-- OUT OF DATE: this belongs to the old network-of-schools model
+-- (a central store dispatching to four schools). Since fix 013,
+-- schools are created by their headteachers in the app, so don't
+-- run this on the live database. It is still used by the local
+-- database tests, which apply it before fixes 009-013.
+--
 -- Loads three demo schools alongside Jasiri School, each with
 -- test students (with NFC card IDs), a registered NFC reader,
 -- food received from the central store, and a week of past

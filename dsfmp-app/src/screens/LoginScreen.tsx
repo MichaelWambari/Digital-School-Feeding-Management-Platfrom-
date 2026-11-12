@@ -8,13 +8,27 @@ import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { FadeIn } from '../components/Motion';
 import { Button } from '../components/Paper';
 
+// Sign in, or (for a headteacher setting up their school) create an
+// account. A new account then names its school (CreateSchoolScreen).
 export default function LoginScreen() {
   const { styles } = useThemedStyles(makeStyles);
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState<'password' | 'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const signingUp = mode === 'signup';
+
+  function switchMode() {
+    setMode(signingUp ? 'signin' : 'signup');
+    setError(null);
+    setInfo(null);
+    setConfirm('');
+  }
 
   // On the web, a failed Google sign-in comes back as an error in the URL.
   useEffect(() => {
@@ -31,9 +45,41 @@ export default function LoginScreen() {
       setError('Enter both your email and password.');
       return;
     }
+    if (signingUp) {
+      if (!fullName.trim()) {
+        setError('Enter your full name.');
+        return;
+      }
+      if (password.length < 8) {
+        setError('Choose a password of at least 8 characters.');
+        return;
+      }
+      if (password !== confirm) {
+        setError("The passwords don't match.");
+        return;
+      }
+    }
     setLoading('password');
     setError(null);
+    setInfo(null);
     try {
+      if (signingUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { full_name: fullName.trim() } },
+        });
+        if (error) {
+          setError(describeAuthError(error.message));
+        } else if (!data.session) {
+          // Supabase's own "Confirm email" setting is on.
+          setInfo('Check your email and confirm your account, then sign in here.');
+          setMode('signin');
+        }
+        // With a session, AppNavigator moves on to the emailed code, then
+        // to naming the school.
+        return;
+      }
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) setError(describeAuthError(error.message));
       // On success AppNavigator moves on to the emailed-code step.
@@ -101,9 +147,29 @@ export default function LoginScreen() {
         </View>
 
         <Surface style={styles.card} elevation={1}>
+          <Text variant="titleMedium" style={styles.cardTitle}>
+            {signingUp ? 'Create a headteacher account' : 'Sign in'}
+          </Text>
+          <Text variant="bodySmall" style={styles.cardSubtitle}>
+            {signingUp
+              ? "For a headteacher setting up their school. Coordinators don't sign up: your headteacher adds you."
+              : 'Headteachers and coordinators'}
+          </Text>
+          {signingUp && (
+            <TextInput
+              mode="outlined"
+              label="Full name"
+              style={styles.fieldGap}
+              left={<TextInput.Icon icon="account-outline" />}
+              autoComplete="name"
+              value={fullName}
+              onChangeText={setFullName}
+            />
+          )}
           <TextInput
             mode="outlined"
             label="Email"
+            style={signingUp ? styles.passwordInput : undefined}
             placeholder="you@school.ac.ke"
             left={<TextInput.Icon icon="email-outline" />}
             autoCapitalize="none"
@@ -125,15 +191,34 @@ export default function LoginScreen() {
               />
             }
             secureTextEntry={!showPassword}
-            autoComplete="current-password"
+            autoComplete={signingUp ? 'new-password' : 'current-password'}
             value={password}
             onChangeText={setPassword}
-            onSubmitEditing={handleLogin}
+            onSubmitEditing={signingUp ? undefined : handleLogin}
             error={!!error}
           />
-          <HelperText type="error" visible={!!error}>
-            {error}
-          </HelperText>
+          {signingUp && (
+            <TextInput
+              mode="outlined"
+              label="Type the password again"
+              style={styles.passwordInput}
+              left={<TextInput.Icon icon="lock-check-outline" />}
+              secureTextEntry={!showPassword}
+              autoComplete="new-password"
+              value={confirm}
+              onChangeText={setConfirm}
+              onSubmitEditing={handleLogin}
+            />
+          )}
+          {info ? (
+            <HelperText type="info" visible>
+              {info}
+            </HelperText>
+          ) : (
+            <HelperText type="error" visible={!!error}>
+              {error}
+            </HelperText>
+          )}
 
           <Button
             mode="contained"
@@ -142,7 +227,10 @@ export default function LoginScreen() {
             disabled={loading !== null}
             contentStyle={styles.buttonContent}
           >
-            Login
+            {signingUp ? 'Create account' : 'Login'}
+          </Button>
+          <Button mode="text" onPress={switchMode} disabled={loading !== null} style={styles.switchButton}>
+            {signingUp ? 'I already have an account' : 'New headteacher? Create an account'}
           </Button>
 
           <View style={styles.dividerRow}>
@@ -162,7 +250,7 @@ export default function LoginScreen() {
             Continue with Google
           </Button>
           <Text variant="bodySmall" style={styles.hint}>
-            Use the Google account with the email your school added for you.
+            Coordinators: use the Google account with the email your headteacher added. A new headteacher can also start here.
           </Text>
         </Surface>
       </FadeIn>
@@ -180,8 +268,14 @@ function authParams(url: string) {
 function describeAuthError(message: string) {
   const m = message.toLowerCase();
   if (m.includes('invalid login credentials')) return 'Wrong email or password.';
+  if (m.includes('already registered') || m.includes('already been registered')) {
+    return 'An account with that email already exists. Sign in instead.';
+  }
+  if (m.includes('email not confirmed')) {
+    return 'Confirm your email first: open the link Supabase sent you, then sign in.';
+  }
   if (m.includes('signups not allowed') || m.includes('signup is disabled')) {
-    return "This Google account isn't registered. Ask your headteacher to add your email in Staff.";
+    return 'New accounts are switched off. Turn on "Allow new users to sign up" in Supabase (Authentication > Sign In / Providers).';
   }
   if (m.includes('provider is not enabled')) {
     return 'Google sign-in is not turned on for this app yet.';
@@ -198,6 +292,10 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   subtitle: { color: c.textMuted, textAlign: 'center', marginTop: 4 },
   card: { borderRadius: 16, padding: 20 },
   passwordInput: { marginTop: 12 },
+  fieldGap: { marginTop: 12 },
+  cardTitle: { color: c.text, fontWeight: '600' },
+  cardSubtitle: { color: c.textMuted, marginTop: 2 },
+  switchButton: { marginTop: 8 },
   buttonContent: { paddingVertical: 6 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
   dividerLine: { flex: 1 },

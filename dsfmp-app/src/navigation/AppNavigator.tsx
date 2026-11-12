@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeContext';
-import { AccountProvider, useAccount } from '../school/SchoolContext';
+import { AccountProvider } from '../school/SchoolContext';
 import { FadeIn } from '../components/Motion';
 
 import LoginScreen from '../screens/LoginScreen';
@@ -19,22 +19,15 @@ import StaffScreen from '../screens/StaffScreen';
 import VerifyCodeScreen from '../screens/VerifyCodeScreen';
 import PermissionsScreen from '../screens/PermissionsScreen';
 import SchoolProfileScreen from '../screens/SchoolProfileScreen';
-import PlatformDashboardScreen from '../screens/PlatformDashboardScreen';
-import SchoolsScreen from '../screens/SchoolsScreen';
 import TimetableScreen from '../screens/TimetableScreen';
 import StudentReportScreen from '../screens/StudentReportScreen';
 import FoodValuesScreen from '../screens/FoodValuesScreen';
 
 const Stack = createNativeStackNavigator();
 
-// The signed-in screens: the platform admin's, or the school's.
-function accountScreens(isPlatformAdmin: boolean) {
-  return isPlatformAdmin ? (
-    <>
-      <Stack.Screen name="Dashboard" component={PlatformDashboardScreen} />
-      <Stack.Screen name="Schools" component={SchoolsScreen} />
-    </>
-  ) : (
+// The signed-in screens of the user's school.
+function accountScreens() {
+  return (
     <>
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="Students" component={StudentsScreen} />
@@ -50,12 +43,6 @@ function accountScreens(isPlatformAdmin: boolean) {
       <Stack.Screen name="FoodValues" component={FoodValuesScreen} />
     </>
   );
-}
-
-// Reads the account inside AccountProvider, so its screens can be chosen by role.
-function SignedInScreens({ render }: { render: (isPlatformAdmin: boolean) => React.ReactElement }) {
-  const { profile } = useAccount();
-  return render(profile.role === 'platform_admin');
 }
 
 // The login session's ID from its access token. It stays the same when the
@@ -131,7 +118,7 @@ export default function AppNavigator() {
   // Screens slide in on phones; the web has no native transitions, so each
   // screen fades in instead. The keyboard view lifts screens above the
   // on-screen keyboard so the field being typed in stays visible.
-  const navigator = (isPlatformAdmin: boolean) => (
+  const navigator = (
     <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={Platform.OS !== 'web'}>
       <NavigationContainer theme={navigationTheme}>
         <Stack.Navigator
@@ -143,7 +130,7 @@ export default function AppNavigator() {
           }
         >
           {session ? (
-            accountScreens(isPlatformAdmin)
+            accountScreens()
           ) : (
             <Stack.Screen name="Login" component={LoginScreen} />
           )}
@@ -154,11 +141,9 @@ export default function AppNavigator() {
 
   // Keyed by user so a new login reloads the account.
   return session ? (
-    <AccountProvider key={session.user.id}>
-      <SignedInScreens render={navigator} />
-    </AccountProvider>
+    <AccountProvider key={session.user.id}>{navigator}</AccountProvider>
   ) : (
-    navigator(false)
+    navigator
   );
 }
 
