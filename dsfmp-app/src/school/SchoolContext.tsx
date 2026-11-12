@@ -89,11 +89,20 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const { data: auth } = await supabase.auth.getUser();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (!auth.user) {
+        // The saved sign-in belongs to an account that no longer exists
+        // (e.g. it was deleted): sign out, which shows the login page.
+        if (authError && authError.status !== undefined && authError.status < 500) {
+          await supabase.auth.signOut();
+          return;
+        }
+        throw new Error(authError?.message ?? 'Unable to connect. Check your connection and try again.');
+      }
       const { data: loaded, error: profileError } = await supabase
         .from('users')
         .select('user_id, full_name, role, school_id, status, must_change_password')
-        .eq('user_id', auth.user?.id ?? '')
+        .eq('user_id', auth.user.id)
         .maybeSingle();
       if (profileError) {
         // 42703: fix 009 isn't installed yet (no must_change_password column).
