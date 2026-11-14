@@ -12,19 +12,26 @@ Set the PN532's mode switches to **I2C** (switch 1 ON, switch 2 OFF) with the
 power off; they are only read at power-up. The PN532 (address 0x24) and the
 LCD (0x27) share SDA and SCL.
 
-| Part | Pin | ESP32 pin |
-|---|---|---|
-| PN532 | SV | 3V3 |
-| | GND | GND |
-| | MO/SDA/TX | 21 |
-| | NSS/SCL/RX | 22 |
-| | IRQ | 4 |
-| | RST | 15 |
-| | SCK, MI | not connected |
-| LCD 1602 (I2C) | VCC / GND | 5V (or 3V3 if the backpack allows) / GND |
-| | SDA / SCL | 21 / 22 |
-| Green LED / red LED (220 Ω) | | 25 / 26 |
-| Buzzer | | 33 |
+The sketch works on a classic ESP32 (WROOM) DevKit or an ESP32-C3 DevKit and
+picks the pins for the board it is compiled for.
+
+| Part | Pin | ESP32 (WROOM) | ESP32-C3 |
+|---|---|---|---|
+| PN532 | SV / 5V | 3V3 | 3V3 |
+| | GND | GND | GND |
+| | MO/SDA/TX | 21 | 4 |
+| | NSS/SCL/RX | 22 | 5 |
+| | IRQ | 4 | 6 |
+| | RST | 15 | 7 |
+| | SCK, MI | not connected | not connected |
+| LCD 1602 (I2C) | VCC / GND | 5V (or 3V3 if the backpack allows) / GND | same |
+| | SDA / SCL | 21 / 22 | 4 / 5 |
+| Green LED / red LED (220 Ω) | | 25 / 26 | 0 / 1 |
+| Buzzer | | 33 | 10 |
+
+In the Arduino IDE, pick **ESP32 Dev Module** for a WROOM board or
+**ESP32C3 Dev Module** for a C3. A C3 board with a CP2102N USB chip needs the
+Silicon Labs CP210x driver on Windows before it gets a COM port.
 
 ## Run it
 

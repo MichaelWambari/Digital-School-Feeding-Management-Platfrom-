@@ -33,13 +33,27 @@ const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 // reader-jasiri-01, reader-tumaini-01, reader-upendo-01 and reader-baraka-01.
 const char *DEVICE_ID = "reader-tumaini-01";
 
-// PN532 IRQ and RST. SDA/SCL are the ESP32 defaults (21/22).
+// Pins. The PN532 and the LCD share the I2C bus (SDA/SCL).
+#if CONFIG_IDF_TARGET_ESP32C3
+// ESP32-C3 DevKit. Avoids 2/8/9 (boot pins), 18/19 (USB)
+// and 20/21 (the USB serial port).
+const int I2C_SDA_PIN = 4;
+const int I2C_SCL_PIN = 5;
+const int PN532_IRQ_PIN = 6;
+const int PN532_RST_PIN = 7;
+const int GREEN_LED_PIN = 0;
+const int RED_LED_PIN = 1;
+const int BUZZER_PIN = 10;
+#else
+// Classic ESP32 (WROOM) DevKit.
+const int I2C_SDA_PIN = 21;
+const int I2C_SCL_PIN = 22;
 const int PN532_IRQ_PIN = 4;
 const int PN532_RST_PIN = 15;
-
 const int GREEN_LED_PIN = 25;
 const int RED_LED_PIN = 26;
 const int BUZZER_PIN = 33;
+#endif
 
 // A card left on the reader is read again and again; ignore
 // repeat reads of the same card for this long.
@@ -52,12 +66,15 @@ Adafruit_PN532 nfc(PN532_IRQ_PIN, PN532_RST_PIN);
 String serialBuffer;
 String lastCard;
 unsigned long lastCardAt = 0;
+bool nfcReady = false;
 
 void setup() {
   Serial.begin(115200);
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
 
+  // Set the I2C pins before the LCD and PN532 libraries start the bus.
+  Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
   lcd.init();
   lcd.backlight();
 
@@ -79,17 +96,20 @@ void loop() {
   }
 }
 
-// Stops with a message on the LCD if the PN532 doesn't answer,
-// since the reader is no use without it.
+// If the PN532 doesn't answer, the reader keeps running with card IDs
+// typed into the Serial Monitor, so the rest can still be tested.
 void startNfc() {
   nfc.begin();
   uint32_t version = nfc.getFirmwareVersion();
   if (!version) {
     Serial.println("PN532 not found. Check the wiring, that the switches are");
-    Serial.println("set to I2C (1 ON, 2 OFF), and power-cycle the board.");
-    showMessage("NFC not found", "Check wiring");
-    while (true) delay(1000);
+    Serial.println("set to I2C (SET0 H, SET1 L), and power-cycle the board.");
+    Serial.println("Carrying on without NFC: type card IDs in the Serial Monitor.");
+    showMessage("NFC not found", "Serial only");
+    delay(2000);
+    return;
   }
+  nfcReady = true;
   Serial.printf("PN532 found, firmware %d.%d\n", (version >> 16) & 0xFF, (version >> 8) & 0xFF);
   nfc.SAMConfig();
 }
@@ -99,7 +119,7 @@ String readCard() {
   uint8_t uid[7];
   uint8_t uidLength;
   // Short timeout so the Serial Monitor is still checked between reads.
-  if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 50)) {
+  if (nfcReady && nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 50)) {
     String card;
     for (uint8_t i = 0; i < uidLength; i++) {
       if (uid[i] < 0x10) card += "0";
