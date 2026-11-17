@@ -95,6 +95,27 @@ A scan outside every window is rejected with `outside_meal_time`, and a
 second scan for the same meal with `already_recorded`. Windows on the same
 day can't overlap. Remove a meal from a day if the school doesn't serve it then.
 
+### Food used and wastage
+
+When the day's dish has servings set (Timetable → dish), the **Food used**
+tab on **Distribution** shows an **issue sheet** for the meal: for each food,
+the planned amount (the school's active students × one serving) and what's
+in stock. The headteacher or a coordinator can change the amounts the
+kitchen actually issues and save them.
+
+When the meal's window ends, the meal is **closed**: the issued amounts are
+taken out of stock, and each one is split into food **served** (students who
+attended × one serving) and estimated **unserved** food (the rest). The
+Food used history shows the unserved amount next to each food. Meals close
+every 15 minutes through `pg_cron`, and also whenever someone opens the Food
+used tab, so it works even where `pg_cron` isn't enabled. Each meal closes
+once only. A meal with no attendance and no saved issue sheet counts as not
+served, and nothing is taken out of stock. If the store has less than was
+issued, only what's in stock is taken, and the sheet says so. Meals whose
+dish has no servings are still entered by hand as before. Food can't be
+entered by hand for a meal that has already closed automatically, so
+nothing is deducted twice (`supabase/fixes/016_meal_close.sql`).
+
 ## Tech stack
 
 - **App:** Expo SDK 58, React Native 0.88, React 19, TypeScript, React Navigation, React Native Paper
@@ -159,6 +180,8 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `supplier_foods` | The foods (from the shared list) each supplier offers |
 | `supplier_documents` | Each supplier's documents; the files are in the private Storage bucket `supplier-documents`, under the supplier's ID |
 | `school_suppliers` | Where each supplier stands with each school: `requested`, `approved`, `declined` or `removed` |
+| `meal_issues` | The amounts the kitchen saved on a meal's issue sheet |
+| `meal_closures` | Each school's closed meals: `closed`, `not_served`, `manual` or `no_recipe` |
 | `food_distribution`, `central_transactions` | History of the retired central store (read-only) |
 
 Every school record has a `school_id`. Attendance, food used and stock

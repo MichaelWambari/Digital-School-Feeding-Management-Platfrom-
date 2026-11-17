@@ -59,7 +59,34 @@ type Delivery = {
   food_items: { item_name: string; unit: string; pack_size?: number | null };
 };
 
-type UsageRow = { item_id: string; meal_type: MealType; consumption_date: string; quantity: number };
+type UsageRow = {
+  item_id: string;
+  meal_type: MealType;
+  consumption_date: string;
+  quantity: number;
+  // Set on rows written when a meal closes (fix 016).
+  unserved_quantity?: number | null;
+};
+
+// One food on a meal's issue sheet (meal_issue_sheet, fix 016).
+type SheetRow = {
+  food_id: string;
+  item_name: string;
+  unit: string;
+  pack_size: number | null;
+  expected_students: number;
+  planned_quantity: number;
+  issued_quantity: number;
+  saved: boolean;
+  in_stock: number;
+  // Filled in once the meal has closed.
+  students: number | null;
+  taken_from_stock: number | null;
+  served_quantity: number | null;
+  unserved_quantity: number | null;
+  meal_name: string;
+  closure_status: 'closed' | 'not_served' | 'manual' | 'no_recipe' | null;
+};
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'supper'] as const;
 type MealType = (typeof MEAL_TYPES)[number];
@@ -578,6 +605,13 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
   // item_id -> quantity typed for the selected meal
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [estimate, setEstimate] = useState<Estimate | null>(null);
+  // The issue sheet; empty when the dish has no servings (or before fix 016),
+  // and the screen then falls back to entering food used by hand.
+  const [sheet, setSheet] = useState<SheetRow[]>([]);
+  // food_id -> amount typed on the issue sheet
+  const [issued, setIssued] = useState<Record<string, string>>({});
+  const [mealEnd, setMealEnd] = useState<string | null>(null);
+  const [sheetSaved, setSheetSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Food used can't be edited or deleted, so saving takes two taps: Save, then Confirm.
@@ -589,11 +623,14 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [scheduleResult, itemResult, usageResult, fedResult, estimateResult] = await Promise.all([
+    // Close any meal whose window has ended, so its food is taken out of
+    // stock even where pg_cron isn't running. Does nothing before fix 016.
+    await supabase.rpc('close_due_meals', { p_school_id: school.school_id });
+    const [scheduleResult, itemResult, usageResult, fedResult, estimateResult, sheetResult] = await Promise.all([
       // The meals the timetable serves on that day.
       supabase
         .from('meal_schedules')
-        .select('meal_type')
+        .select('meal_type, end_time')
         .eq('school_id', school.school_id)
         .eq('weekday', isoWeekday(date)),
       supabase
@@ -602,7 +639,7 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
         .eq('school_id', school.school_id),
       supabase
         .from('food_consumption')
-        .select('item_id, meal_type, consumption_date, quantity')
+        .select('*')
         .eq('school_id', school.school_id)
         .gte('consumption_date', historyStart)
         .order('consumption_date', { ascending: false }),
@@ -618,6 +655,11 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
         p_date: date,
         p_meal_type: mealType,
       }),
+      supabase.rpc('meal_issue_sheet', {
+        p_school_id: school.school_id,
+        p_date: date,
+        p_meal_type: mealType,
+      }),
     ]);
     const loadError = scheduleResult.error ?? itemResult.error ?? usageResult.error ?? fedResult.error;
     if (loadError) {
@@ -629,6 +671,15 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
       const served = MEAL_TYPES.filter((m) => scheduled.has(m));
       setServedMeals(served.length > 0 ? served : [...MEAL_TYPES]);
       if (served.length > 0 && !served.includes(mealType)) setMealType(served[0]);
+      const end = (scheduleResult.data ?? []).find((s) => s.meal_type === mealType)?.end_time;
+      setMealEnd(end ? String(end).slice(0, 5) : null);
+
+      const sheetRows = sheetResult.error ? [] : ((sheetResult.data ?? []) as SheetRow[]);
+      setSheet(sheetRows);
+      setIssued(
+        Object.fromEntries(sheetRows.map((r) => [r.food_id, String(Number(r.issued_quantity))]))
+      );
+      setSheetSaved(false);
       const loaded = (itemResult.data ?? []) as unknown as Item[];
       const loadedUsage = (usageResult.data ?? []) as UsageRow[];
       setItems(loaded.sort((a, b) => a.food_items.item_name.localeCompare(b.food_items.item_name)));
@@ -751,8 +802,48 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
     }
   }
 
+  // The issue sheet is used when the day's dish has servings set.
+  const automatic = sheet.length > 0;
+  const closure = sheet[0]?.closure_status ?? null;
+
+  async function handleSaveSheet() {
+    const items = [];
+    for (const row of sheet) {
+      const text = (issued[row.food_id] ?? '').trim();
+      const qty = Number(text);
+      if (text === '' || !Number.isFinite(qty) || qty < 0) {
+        setError(`Enter the amount of ${row.item_name} to issue (0 or more).`);
+        return;
+      }
+      items.push({ food_id: row.food_id, quantity: qty });
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('set_meal_issue', {
+        p_school_id: school.school_id,
+        p_date: date,
+        p_meal_type: mealType,
+        p_items: items,
+      });
+      if (error) {
+        if (error.code === '23514') setError('This meal has already closed. Pull down to refresh.');
+        else if (error.code === '42501') setError('You do not have permission to change the issue sheet.');
+        else setError(error.message);
+        return;
+      }
+      await loadData();
+      setSheetSaved(true);
+    } catch {
+      setError(CONNECTION_ERROR);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Food used per day and meal over the last week, newest first.
-  const history = new Map<string, Map<MealType, { item: Item; quantity: number }[]>>();
+  type HistoryEntry = { item: Item; quantity: number; unserved: number };
+  const history = new Map<string, Map<MealType, HistoryEntry[]>>();
   for (const u of usage) {
     const item = itemById.get(u.item_id);
     if (!item) continue;
@@ -760,10 +851,105 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
     history.set(u.consumption_date, day);
     const meal = day.get(u.meal_type) ?? [];
     day.set(u.meal_type, meal);
-    const existing = meal.find((m: { item: Item }) => m.item.item_id === u.item_id);
-    if (existing) existing.quantity += Number(u.quantity);
-    else meal.push({ item, quantity: Number(u.quantity) });
+    const unserved = Number(u.unserved_quantity ?? 0);
+    const existing = meal.find((m: HistoryEntry) => m.item.item_id === u.item_id);
+    if (existing) {
+      existing.quantity += Number(u.quantity);
+      existing.unserved += unserved;
+    } else {
+      meal.push({ item, quantity: Number(u.quantity), unserved });
+    }
   }
+
+  const mealName = MEAL_LABELS[mealType].toLowerCase();
+  const sheetIntro =
+    closure === 'closed'
+      ? `Closed. ${sheet[0].students ?? 0} students were served; the issued food was taken out of stock.`
+      : closure === 'not_served'
+        ? 'Closed without being served: no students were recorded and no issue sheet was saved, so nothing was taken out of stock.'
+        : closure === 'manual'
+          ? 'Food used at this meal was entered by hand (see below), so nothing more was taken out of stock.'
+          : closure === 'no_recipe'
+            ? 'This meal closed before its dish had servings, so nothing was taken out of stock.'
+            : `Planned for ${sheet[0]?.expected_students ?? 0} students × one serving. Change the amounts if ` +
+              `the kitchen issues more or less, then save. ` +
+              (mealEnd
+                ? `When ${mealName} ends at ${mealEnd}, the issued food is taken out of stock automatically.`
+                : 'When the meal ends, the issued food is taken out of stock automatically.');
+
+  const sheetView = automatic && (
+    <Card mode="outlined" style={styles.estimateCard}>
+      <Card.Content>
+        <Text variant="titleSmall" style={styles.estimateTitle}>
+          {closure ? `${sheet[0].meal_name}: food used` : `Issue sheet: ${sheet[0].meal_name}`}
+        </Text>
+        <Text variant="bodySmall" style={styles.meta}>{sheetIntro}</Text>
+        {sheet.map((row, index) => {
+          const qty = (n: number | null) => formatQty(Number(n ?? 0), row.unit);
+          let description: string;
+          if (closure === 'closed') {
+            description =
+              `Issued ${qty(row.issued_quantity)} · served ${qty(row.served_quantity)} · ` +
+              `unserved ${qty(row.unserved_quantity)}`;
+            if (row.taken_from_stock !== null && Number(row.taken_from_stock) < Number(row.issued_quantity)) {
+              description += ` · only ${qty(row.taken_from_stock)} was in stock`;
+            }
+          } else if (closure) {
+            description = `${formatStock(row.in_stock, row)} in stock`;
+          } else {
+            description =
+              `Planned ${qty(row.planned_quantity)} · ${formatStock(row.in_stock, row)} in stock` +
+              (Number(issued[row.food_id]) > Number(row.in_stock) ? ' · not enough in stock' : '');
+          }
+          return (
+            <View key={row.food_id}>
+              {index > 0 && <Divider />}
+              <List.Item
+                title={row.item_name}
+                description={description}
+                descriptionNumberOfLines={3}
+                style={styles.row}
+                contentStyle={styles.rowContent}
+                right={
+                  !closure && canRecord
+                    ? () => (
+                        <TextInput
+                          mode="outlined"
+                          dense
+                          style={styles.amountInput}
+                          contentStyle={styles.amountText}
+                          value={issued[row.food_id] ?? ''}
+                          onChangeText={(text) => {
+                            setIssued({ ...issued, [row.food_id]: text });
+                            setSheetSaved(false);
+                          }}
+                          keyboardType="decimal-pad"
+                          placeholder={row.unit}
+                          accessibilityLabel={`${row.item_name} to issue, in ${row.unit}`}
+                        />
+                      )
+                    : undefined
+                }
+              />
+            </View>
+          );
+        })}
+        {!closure && canRecord && (
+          <Button
+            mode="contained"
+            icon={sheetSaved ? 'check' : 'content-save-outline'}
+            onPress={handleSaveSheet}
+            loading={saving}
+            disabled={saving}
+            contentStyle={styles.buttonContent}
+            style={styles.sheetButton}
+          >
+            {sheetSaved ? 'Issue sheet saved' : 'Save issue sheet'}
+          </Button>
+        )}
+      </Card.Content>
+    </Card>
+  );
 
   return (
     <FadeInScrollView
@@ -800,7 +986,9 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
         label={`students at ${MEAL_LABELS[mealType].toLowerCase()} · ${formatDay(date)}`}
       />
 
-      {estimate && (
+      {sheetView}
+
+      {estimate && !automatic && (
         <Card mode="outlined" style={styles.estimateCard}>
           <Card.Content>
             <Text variant="titleSmall" style={styles.estimateTitle}>
@@ -829,7 +1017,7 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
 
       {!loading && <LowStockCard items={items} estimate={estimate} onOpenRequests={onOpenRequests} />}
 
-      {!loading && items.length === 0 ? (
+      {automatic ? null : !loading && items.length === 0 ? (
         <Text variant="bodyMedium" style={styles.emptyLeft}>
           No food in stock yet. Record food received on the Inventory screen first.
         </Text>
@@ -882,7 +1070,7 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
         {error}
       </HelperText>
 
-      {items.length > 0 && canRecord && (
+      {!automatic && items.length > 0 && canRecord && (
         <Button
           mode="contained"
           icon={confirming ? 'check-all' : 'content-save-outline'}
@@ -915,7 +1103,13 @@ function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
                   <Text variant="bodyMedium" style={styles.historyMeal}>{MEAL_LABELS[m]}: </Text>
                   {meals
                     .get(m)!
-                    .map((u) => `${u.item.food_items.item_name} ${formatQty(u.quantity, u.item.food_items.unit)}`)
+                    .map(
+                      (u) =>
+                        `${u.item.food_items.item_name} ${formatQty(u.quantity, u.item.food_items.unit)}` +
+                        (u.unserved > 0
+                          ? ` (${formatQty(u.unserved, u.item.food_items.unit)} unserved)`
+                          : '')
+                    )
                     .join(', ')}
                 </Text>
               ))}
@@ -1131,6 +1325,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   estimateCard: { borderRadius: 16, marginTop: 12 },
   estimateTitle: { color: c.text, marginBottom: 4 },
   estimateWarning: { color: c.warning, marginTop: 6 },
+  sheetButton: { marginTop: 12 },
   lowCard: { borderColor: c.warning },
   lowTitle: { color: c.text },
   lowPill: { alignSelf: 'center', marginRight: 8 },

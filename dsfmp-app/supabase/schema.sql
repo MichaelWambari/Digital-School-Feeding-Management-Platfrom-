@@ -54,6 +54,15 @@
   drop function if exists public.list_schools() cascade;
   drop function if exists public.set_school_status(uuid, text) cascade;
 
+  -- added by fix 016
+  drop table if exists meal_closures cascade;
+  drop table if exists meal_issues cascade;
+  drop function if exists public.check_manual_food_use() cascade;
+  drop function if exists public.meal_issue_sheet(uuid, date, text) cascade;
+  drop function if exists public.set_meal_issue(uuid, date, text, jsonb) cascade;
+  drop function if exists public.close_meal(uuid, date, text) cascade;
+  drop function if exists public.close_due_meals(uuid) cascade;
+
   -- added by fix 015
   drop table if exists supply_requests cascade;
   drop function if exists public.request_supply(uuid, uuid, numeric, text) cascade;
