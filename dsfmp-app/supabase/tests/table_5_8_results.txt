@@ -1,0 +1,30 @@
+Run on 17 November 2026 11:59 EAT with PGlite 0.5.16 (PostgreSQL in WebAssembly): supabase/schema.sql + fixes 009-015, signed-in users under Row Level Security.
+
+ok   TC-04 learner saved and listed
+ok   TC-05 duplicate admission number rejected -- 23505 duplicate key value violates unique constraint "beneficiaries_school_admission_no_key"
+ok   TC-05 card UID already used at another school rejected -- 23505 duplicate key value violates unique constraint "beneficiaries_nfc_tag_id_key"
+ok   TC-05 missing required name rejected -- 23502 null value in column "full_name" of relation "beneficiaries" violates not-null constraint
+ok   TC-06 one record, recorded_by = coordinator, no device
+ok   TC-06 second manual entry for the same meal rejected -- 23505 duplicate key value violates unique constraint "idx_meal_attendance_once_per_meal"
+ok   TC-03 insert rejected by RLS once record_attendance is off -- 42501 new row violates row-level security policy for table "meal_attendance"
+ok   TC-03 another school's headteacher cannot record for this school -- 42501 new row violates row-level security policy for table "meal_attendance"
+ok   TC-03 another school sees none of this school's learners
+ok   TC-07 registered card: success, one record with device_id -- {"success":true,"first_name":"Amina","meal_type":"lunch","meal_name":null}
+ok   TC-08 10 repeat taps -> already_recorded, still one record
+ok   TC-09 unregistered card -> unknown_tag, nothing stored
+ok   TC-09 inactive learner -> not_eligible
+ok   TC-09 other school's card -> wrong_school
+ok   TC-09 unregistered reader rejected
+ok   TC-09 every rejected attempt logged -- [{"action_type":"already_recorded","c":10},{"action_type":"attendance_recorded","c":1},{"action_type":"inactive_device","c":1},{"action_type":"not_eligible","c":1},{"action_type":"unknown_tag","c":1},{"action_type":"wrong_school","c":1}]
+ok   TC-09 tap outside any meal window -> outside_meal_time
+ok   TC-10 food received: stock 0 -> 100
+ok   TC-10 food used 75: stock 25, at/below reorder level 30 (low stock)
+ok   TC-11 use 25.5 with 25 in stock rejected -- 23514 Insufficient stock for inventory item b560e68d-1101-44f0-bd5b-bd23a74fe178
+ok   TC-11 ...and stock unchanged
+ok   TC-11 use exactly 25 accepted, stock becomes 0
+ok   TC-11 zero amount rejected -- 23514 new row for relation "food_consumption" violates check constraint "food_consumption_quantity_check"
+ok   TC-12 7-day report total 29 = database 29 = expected 29
+ok   TC-12 per-meal totals: lunch 21, breakfast 8
+ok   TC-13 dashboard counts {"students":5,"items":1,"coords":1} match the data
+
+26 passed, 0 failed
