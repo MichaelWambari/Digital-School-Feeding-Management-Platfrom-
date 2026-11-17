@@ -1,21 +1,45 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, RefreshControl } from 'react-native';
 import { Card, Divider, HelperText, List, Text, TextInput } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, Chip, SegmentedButtons } from '../components/Paper';
-import { Field, ScreenHeader, StatCard } from '../components/ScreenParts';
+import { Field, ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
 import { formatPacks, formatQty, formatStock } from '../lib/units';
+import { formatDate } from '../lib/suppliers';
+import {
+  REQUEST_LABELS,
+  REQUEST_TONES,
+  SchoolRequest,
+  describeRequestError,
+  isOpen,
+} from '../lib/supplyRequests';
+import type { DirectorySupplier } from './SuppliersScreen';
 
-// Food used at each meal, and dispatches from the old central store
-// (those still in transit can be received; nothing new is dispatched).
+// Food used at each meal, food running low (with requests to the school's
+// suppliers), and dispatches from the old central store (those still in
+// transit can be received; nothing new is dispatched).
 
 type Item = {
   item_id: string;
   quantity_available: number;
+  reorder_level: number | null;
   food_items: { food_id: string; item_name: string; unit: string; pack_size?: number | null };
+};
+
+// A food that is at or below its reorder level, or short of what the
+// selected meal needs.
+type LowItem = {
+  food_id: string;
+  item_name: string;
+  unit: string;
+  pack_size: number | null;
+  stock: number;
+  reorder: number;
+  needed: number; // for the selected meal; 0 if not known
 };
 
 // Food a meal should have used: students who attended x the dish's serving.
@@ -74,7 +98,9 @@ function formatDay(date: string) {
 
 export default function DistributionScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
-  const [tab, setTab] = useState<'usage' | 'deliveries'>('usage');
+  const { can } = useSchool();
+  const seesRequests = can('view_procurement') || can('verify_deliveries');
+  const [tab, setTab] = useState<'usage' | 'requests' | 'deliveries'>('usage');
 
   return (
     <View style={styles.container}>
@@ -85,16 +111,460 @@ export default function DistributionScreen({ navigation }: any) {
         onValueChange={(t) => setTab(t as typeof tab)}
         buttons={[
           { value: 'usage', label: 'Food used', icon: 'silverware-fork-knife' },
+          ...(seesRequests ? [{ value: 'requests', label: 'Requests', icon: 'cart-arrow-down' }] : []),
           { value: 'deliveries', label: 'Old dispatches', icon: 'truck-outline' },
         ]}
       />
 
-      {tab === 'usage' ? <UsageTab /> : <DeliveriesTab />}
+      {tab === 'usage' ? (
+        <UsageTab onOpenRequests={seesRequests ? () => setTab('requests') : undefined} />
+      ) : tab === 'requests' ? (
+        <RequestsTab />
+      ) : (
+        <DeliveriesTab />
+      )}
     </View>
   );
 }
 
-function UsageTab() {
+// Rounds a suggested amount up to whole kg/litres, or whole bags if bagged.
+function suggestQuantity(low: LowItem) {
+  const target = Math.max(low.reorder * 2, low.needed + low.reorder);
+  let qty = target - low.stock;
+  if (qty <= 0) qty = low.reorder || 1;
+  return low.pack_size ? Math.ceil(qty / low.pack_size) * low.pack_size : Math.ceil(qty);
+}
+
+// Food running low, each with a button to ask one of the school's
+// approved suppliers for more.
+function LowStockCard({
+  items,
+  estimate,
+  onOpenRequests,
+}: {
+  items: Item[];
+  estimate: Estimate | null;
+  onOpenRequests?: () => void;
+}) {
+  const { colors, styles } = useThemedStyles(makeStyles);
+  const navigation = useNavigation<any>();
+  const { can } = useSchool();
+  const canRequest = can('view_procurement');
+  const [suppliers, setSuppliers] = useState<DirectorySupplier[]>([]);
+  const [requests, setRequests] = useState<SchoolRequest[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // The food whose request form is open, and the form's values.
+  const [openFood, setOpenFood] = useState<string | null>(null);
+  const [supplierId, setSupplierId] = useState<string | null>(null);
+  const [quantity, setQuantity] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!canRequest) return;
+    const [directory, sent] = await Promise.all([
+      supabase.rpc('school_supplier_directory'),
+      supabase.rpc('school_supply_requests'),
+    ]);
+    const problem = directory.error ?? sent.error;
+    if (problem) {
+      setLoadError(describeRequestError(problem));
+      return;
+    }
+    setLoadError(null);
+    setSuppliers(((directory.data ?? []) as DirectorySupplier[]).filter((s) => s.status === 'approved'));
+    setRequests((sent.data ?? []) as SchoolRequest[]);
+  }, [canRequest]);
+
+  // Reloads whenever the screen reloads its stock.
+  useEffect(() => {
+    load();
+  }, [load, items]);
+
+  const needs = new Map(
+    estimate && estimate.students > 0 ? estimate.rows.map((r) => [r.food_id, r] as const) : []
+  );
+  const low: LowItem[] = [];
+  for (const i of items) {
+    const stock = Number(i.quantity_available);
+    const reorder = Number(i.reorder_level ?? 0);
+    const needed = needs.get(i.food_items.food_id)?.quantity ?? 0;
+    if ((reorder > 0 && stock <= reorder) || needed > stock) {
+      low.push({
+        food_id: i.food_items.food_id,
+        item_name: i.food_items.item_name,
+        unit: i.food_items.unit,
+        pack_size: i.food_items.pack_size ?? null,
+        stock,
+        reorder,
+        needed,
+      });
+    }
+  }
+  // Foods the menu needs that the school has none of.
+  for (const r of needs.values()) {
+    if (r.quantity > 0 && !items.some((i) => i.food_items.food_id === r.food_id)) {
+      low.push({ food_id: r.food_id, item_name: r.item_name, unit: r.unit, pack_size: null, stock: 0, reorder: 0, needed: r.quantity });
+    }
+  }
+  if (low.length === 0) return null;
+
+  // Suppliers that list this food come first.
+  function suppliersFor(food: LowItem) {
+    const name = food.item_name.trim().toLowerCase();
+    const listsIt = (s: DirectorySupplier) => s.foods.some((f) => f.trim().toLowerCase() === name);
+    return [...suppliers.filter(listsIt), ...suppliers.filter((s) => !listsIt(s))].map((s) => ({
+      supplier: s,
+      listsIt: listsIt(s),
+    }));
+  }
+
+  function startRequest(food: LowItem) {
+    setOpenFood(food.food_id);
+    setSupplierId(suppliersFor(food)[0]?.supplier.supplier_id ?? null);
+    setQuantity(String(suggestQuantity(food)));
+    setNote('');
+    setError(null);
+  }
+
+  async function sendRequest(food: LowItem) {
+    const qty = Number(quantity.trim());
+    if (!supplierId) {
+      setError('Choose a supplier.');
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError(`Enter how much ${food.item_name} you need, in ${food.unit}.`);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc('request_supply', {
+        p_supplier_id: supplierId,
+        p_food_id: food.food_id,
+        p_quantity: qty,
+        p_note: note.trim() || null,
+      });
+      if (error) {
+        setError(describeRequestError(error));
+        return;
+      }
+      setOpenFood(null);
+      await load();
+    } catch {
+      setError(CONNECTION_ERROR);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card mode="outlined" style={[styles.estimateCard, styles.lowCard]}>
+      <Card.Title
+        title="Running low"
+        titleStyle={styles.lowTitle}
+        subtitle={
+          canRequest
+            ? 'Request more from one of your suppliers.'
+            : 'The headteacher or a coordinator can request more from a supplier.'
+        }
+        subtitleNumberOfLines={2}
+        left={(props) => <List.Icon {...props} icon="alert-outline" color={colors.warning} />}
+      />
+      <Card.Content>
+        {loadError && <HelperText type="error">{loadError}</HelperText>}
+        {low.map((food, index) => {
+          const open = requests.find((r) => r.food_id === food.food_id && isOpen(r.status));
+          const formOpen = openFood === food.food_id;
+          const details = [
+            `${formatStock(food.stock, food)} in stock`,
+            food.reorder > 0 ? `reorder at ${formatQty(food.reorder, food.unit)}` : null,
+            food.needed > food.stock ? `this meal needs ${formatQty(food.needed, food.unit)}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          return (
+            <View key={food.food_id}>
+              {index > 0 && <Divider />}
+              <List.Item
+                title={food.item_name}
+                description={
+                  open
+                    ? `${details}\nRequested ${formatQty(open.quantity, open.unit)} from ${open.business_name}`
+                    : details
+                }
+                descriptionNumberOfLines={4}
+                style={styles.row}
+                contentStyle={styles.rowContent}
+                right={() =>
+                  open ? (
+                    <StatusPill
+                      label={REQUEST_LABELS[open.status]}
+                      tone={REQUEST_TONES[open.status]}
+                      style={styles.lowPill}
+                    />
+                  ) : canRequest && !formOpen ? (
+                    <Button mode="contained-tonal" icon="cart-plus" compact onPress={() => startRequest(food)} style={styles.lowButton}>
+                      Request
+                    </Button>
+                  ) : null
+                }
+              />
+              {formOpen && (
+                <View style={styles.requestForm}>
+                  {suppliers.length === 0 ? (
+                    <>
+                      <Text variant="bodySmall" style={styles.meta}>
+                        Your school hasn't approved any suppliers yet. The headteacher approves them on the
+                        Suppliers screen.
+                      </Text>
+                      <Button mode="text" icon="truck-outline" onPress={() => navigation.navigate('Suppliers')} style={styles.smallButton}>
+                        Go to Suppliers
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Text variant="labelLarge" style={styles.estimateTitle}>Supplier</Text>
+                      <View style={styles.supplierChips}>
+                        {suppliersFor(food).map(({ supplier, listsIt }) => (
+                          <Chip
+                            key={supplier.supplier_id}
+                            mode={supplierId === supplier.supplier_id ? 'flat' : 'outlined'}
+                            selected={supplierId === supplier.supplier_id}
+                            icon={listsIt ? 'check-decagram-outline' : undefined}
+                            onPress={() => setSupplierId(supplier.supplier_id)}
+                            disabled={busy}
+                          >
+                            {supplier.business_name}
+                          </Chip>
+                        ))}
+                      </View>
+                      {suppliersFor(food).some((s) => s.listsIt) && (
+                        <Text variant="bodySmall" style={styles.meta}>
+                          A tick means the supplier lists {food.item_name}.
+                        </Text>
+                      )}
+                      <Field
+                        label={`Amount needed (${food.unit})`}
+                        value={quantity}
+                        onChangeText={setQuantity}
+                        keyboardType="decimal-pad"
+                      />
+                      <Field
+                        label="Note to the supplier (optional)"
+                        value={note}
+                        onChangeText={setNote}
+                        placeholder="e.g. Please deliver by Friday"
+                        multiline
+                      />
+                    </>
+                  )}
+                  <HelperText type="error" visible={!!error}>{error}</HelperText>
+                  <View style={styles.inlineRow}>
+                    {suppliers.length > 0 && (
+                      <Button mode="contained" icon="send-outline" onPress={() => sendRequest(food)} loading={busy} disabled={busy}>
+                        Send request
+                      </Button>
+                    )}
+                    <Button mode="text" onPress={() => setOpenFood(null)} disabled={busy}>
+                      Cancel
+                    </Button>
+                  </View>
+                </View>
+              )}
+            </View>
+          );
+        })}
+        {onOpenRequests && requests.some((r) => isOpen(r.status)) && (
+          <Button mode="text" icon="cart-arrow-down" onPress={onOpenRequests} style={styles.smallButton}>
+            See all supply requests
+          </Button>
+        )}
+      </Card.Content>
+    </Card>
+  );
+}
+
+// The school's supply requests: open ones first, with recording the delivery.
+function RequestsTab() {
+  const { colors, styles } = useThemedStyles(makeStyles);
+  const { can } = useSchool();
+  const canReceive = can('verify_deliveries');
+  const canCancel = can('view_procurement');
+  const [requests, setRequests] = useState<SchoolRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // The request being received (with the amount that arrived) or cancelled.
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [received, setReceived] = useState('');
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.rpc('school_supply_requests');
+    if (error) setError(describeRequestError(error));
+    else {
+      setError(null);
+      setRequests((data ?? []) as SchoolRequest[]);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function run(fn: string, args: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc(fn, args);
+      if (error) {
+        setError(describeRequestError(error));
+        return;
+      }
+      setReceivingId(null);
+      setCancellingId(null);
+      await load();
+    } catch {
+      setError(CONNECTION_ERROR);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleReceive(r: SchoolRequest) {
+    const qty = Number(received.trim());
+    if (received.trim() === '' || !Number.isFinite(qty) || qty < 0) {
+      setError(`Enter the amount of ${r.item_name} that arrived (0 if none).`);
+      return;
+    }
+    run('receive_supply_request', { p_request_id: r.request_id, p_quantity: qty });
+  }
+
+  function handleCancel(r: SchoolRequest) {
+    if (cancellingId !== r.request_id) {
+      setCancellingId(r.request_id);
+      return;
+    }
+    run('cancel_supply_request', { p_request_id: r.request_id });
+  }
+
+  const open = requests.filter((r) => isOpen(r.status));
+  const past = requests.filter((r) => !isOpen(r.status));
+
+  return (
+    <FadeInScrollView
+      style={styles.tabBody}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.primary} />}
+    >
+      {error && <HelperText type="error">{error}</HelperText>}
+
+      <Text variant="titleSmall" style={[styles.sectionTitle, styles.firstSection]}>Open requests</Text>
+      {open.length === 0 ? (
+        <Text variant="bodyMedium" style={styles.emptyLeft}>
+          No open requests. Food that runs low shows on the Food used tab, with a button to request more.
+        </Text>
+      ) : (
+        open.map((r) => {
+          const receiving = receivingId === r.request_id;
+          return (
+            <Card key={r.request_id} mode="contained" style={styles.card}>
+              <Card.Title
+                title={`${r.item_name} · ${formatQty(r.quantity, r.unit)}`}
+                subtitle={`${r.business_name} · ${r.phone}`}
+                left={(props) => <List.Icon {...props} icon="cart-arrow-down" color={colors.primary} />}
+                right={() => (
+                  <StatusPill label={REQUEST_LABELS[r.status]} tone={REQUEST_TONES[r.status]} style={styles.lowPill} />
+                )}
+              />
+              <Card.Content>
+                <Text variant="bodySmall" style={styles.meta}>
+                  Requested {formatDate(r.created_at)}
+                  {r.requested_by_name ? ` by ${r.requested_by_name}` : ''}
+                  {r.note ? `\nYour note: "${r.note}"` : ''}
+                  {r.response_note ? `\nSupplier: "${r.response_note}"` : ''}
+                </Text>
+                {receiving ? (
+                  <>
+                    <View style={styles.inlineRow}>
+                      <Field
+                        label={`Amount that arrived (${r.unit})`}
+                        style={styles.inlineInput}
+                        value={received}
+                        onChangeText={setReceived}
+                        keyboardType="decimal-pad"
+                      />
+                      <Button mode="contained" onPress={() => handleReceive(r)} loading={busy} disabled={busy}
+                        style={styles.inlineButton} contentStyle={styles.buttonContent}>
+                        Add to stock
+                      </Button>
+                    </View>
+                    <Button mode="text" onPress={() => setReceivingId(null)} disabled={busy} style={styles.cancelButton}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <View style={[styles.inlineRow, styles.requestActions]}>
+                    {canReceive && (
+                      <Button mode="contained" icon="package-variant-closed-check" disabled={busy}
+                        onPress={() => {
+                          setReceivingId(r.request_id);
+                          setCancellingId(null);
+                          setReceived(String(r.quantity));
+                          setError(null);
+                        }}>
+                        Record delivery
+                      </Button>
+                    )}
+                    {canCancel && (
+                      <Button mode="text" textColor={colors.danger} disabled={busy}
+                        loading={busy && cancellingId === r.request_id} onPress={() => handleCancel(r)}>
+                        {cancellingId === r.request_id ? 'Tap again to cancel' : 'Cancel request'}
+                      </Button>
+                    )}
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
+          );
+        })
+      )}
+
+      <Text variant="titleSmall" style={styles.sectionTitle}>Past requests</Text>
+      {past.length === 0 ? (
+        <Text variant="bodyMedium" style={styles.emptyLeft}>None yet.</Text>
+      ) : (
+        past.map((r, index) => (
+          <View key={r.request_id}>
+            {index > 0 && <Divider />}
+            <List.Item
+              title={`${r.item_name} · ${r.business_name}`}
+              description={
+                r.status === 'delivered'
+                  ? `Asked ${formatQty(r.quantity, r.unit)} · received ${formatQty(r.quantity_received ?? 0, r.unit)} on ${formatDate(r.received_at!)}`
+                  : `Asked ${formatQty(r.quantity, r.unit)} on ${formatDate(r.created_at)}` +
+                    (r.response_note ? ` · "${r.response_note}"` : '')
+              }
+              descriptionNumberOfLines={3}
+              style={styles.row}
+              right={() => (
+                <StatusPill label={REQUEST_LABELS[r.status]} tone={REQUEST_TONES[r.status]} style={styles.lowPill} />
+              )}
+            />
+          </View>
+        ))
+      )}
+      <View style={styles.bottomSpacer} />
+    </FadeInScrollView>
+  );
+}
+
+function UsageTab({ onOpenRequests }: { onOpenRequests?: () => void }) {
   const { colors, styles } = useThemedStyles(makeStyles);
   const { school, profile } = useSchool();
   // The database lets the headteacher and coordinators record food used.
@@ -128,7 +598,7 @@ function UsageTab() {
         .eq('weekday', isoWeekday(date)),
       supabase
         .from('inventory_items')
-        .select('item_id, quantity_available, food_items(*)')
+        .select('item_id, quantity_available, reorder_level, food_items(*)')
         .eq('school_id', school.school_id),
       supabase
         .from('food_consumption')
@@ -356,6 +826,8 @@ function UsageTab() {
           </Card.Content>
         </Card>
       )}
+
+      {!loading && <LowStockCard items={items} estimate={estimate} onOpenRequests={onOpenRequests} />}
 
       {!loading && items.length === 0 ? (
         <Text variant="bodyMedium" style={styles.emptyLeft}>
@@ -659,6 +1131,13 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   estimateCard: { borderRadius: 16, marginTop: 12 },
   estimateTitle: { color: c.text, marginBottom: 4 },
   estimateWarning: { color: c.warning, marginTop: 6 },
+  lowCard: { borderColor: c.warning },
+  lowTitle: { color: c.text },
+  lowPill: { alignSelf: 'center', marginRight: 8 },
+  lowButton: { alignSelf: 'center' },
+  requestForm: { paddingBottom: 12 },
+  supplierChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6, marginBottom: 4 },
+  requestActions: { marginTop: 10, flexWrap: 'wrap' },
   sectionTitle: { marginTop: 24, marginBottom: 10, color: c.text },
   firstSection: { marginTop: 4 },
   meta: { color: c.textMuted },

@@ -6,13 +6,15 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { FadeIn } from '../components/Motion';
-import { Button } from '../components/Paper';
+import { Button, SegmentedButtons } from '../components/Paper';
 
 // Sign in, or (for a headteacher setting up their school) create an
 // account. A new account then names its school (CreateSchoolScreen).
 export default function LoginScreen() {
   const { styles } = useThemedStyles(makeStyles);
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  // Who is signing up: a headteacher setting up a school, or a food supplier.
+  const [accountType, setAccountType] = useState<'school' | 'supplier'>('school');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -67,7 +69,7 @@ export default function LoginScreen() {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
-          options: { data: { full_name: fullName.trim() } },
+          options: { data: { full_name: fullName.trim(), account_type: accountType } },
         });
         if (error) {
           setError(describeAuthError(error.message));
@@ -148,13 +150,26 @@ export default function LoginScreen() {
 
         <Surface style={styles.card} elevation={1}>
           <Text variant="titleMedium" style={styles.cardTitle}>
-            {signingUp ? 'Create a headteacher account' : 'Sign in'}
+            {signingUp ? 'Create an account' : 'Sign in'}
           </Text>
           <Text variant="bodySmall" style={styles.cardSubtitle}>
-            {signingUp
+            {!signingUp
+              ? 'Headteachers, coordinators and suppliers'
+              : accountType === 'school'
               ? "For a headteacher setting up their school. Coordinators don't sign up: your headteacher adds you."
-              : 'Headteachers and coordinators'}
+              : 'For a business that supplies food to schools. Schools choose which suppliers they work with.'}
           </Text>
+          {signingUp && (
+            <SegmentedButtons
+              style={styles.fieldGap}
+              value={accountType}
+              onValueChange={(v) => setAccountType(v as 'school' | 'supplier')}
+              buttons={[
+                { value: 'school', label: "I'm a headteacher", icon: 'school-outline' },
+                { value: 'supplier', label: "I'm a supplier", icon: 'truck-outline' },
+              ]}
+            />
+          )}
           {signingUp && (
             <TextInput
               mode="outlined"
@@ -230,7 +245,7 @@ export default function LoginScreen() {
             {signingUp ? 'Create account' : 'Login'}
           </Button>
           <Button mode="text" onPress={switchMode} disabled={loading !== null} style={styles.switchButton}>
-            {signingUp ? 'I already have an account' : 'New headteacher? Create an account'}
+            {signingUp ? 'I already have an account' : 'New headteacher or supplier? Create an account'}
           </Button>
 
           <View style={styles.dividerRow}>
@@ -250,7 +265,7 @@ export default function LoginScreen() {
             Continue with Google
           </Button>
           <Text variant="bodySmall" style={styles.hint}>
-            Coordinators: use the Google account with the email your headteacher added. A new headteacher can also start here.
+            Coordinators: use the Google account with the email your headteacher added. A new headteacher or supplier can also start here.
           </Text>
         </Surface>
       </FadeIn>

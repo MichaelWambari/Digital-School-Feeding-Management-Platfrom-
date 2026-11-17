@@ -44,12 +44,39 @@ Every user has one role, and the database enforces it with row-level security:
 
 | Role | Can do |
 |---|---|
-| `headteacher` | Everything at their school: profile, staff, permissions, students, meals, stock, readers, reports, and (soon) supplier choices and order confirmation. A school always keeps at least one active headteacher. |
-| `coordinator` | Runs the school day to day: students and NFC cards, attendance, the timetable, dishes and servings, inventory (food received, food used) and reports. By default it may do all of these; it can't manage staff, choose suppliers or confirm orders. |
+| `headteacher` | Everything at their school: profile, staff, permissions, students, meals, stock, readers, reports, approving suppliers, and (soon) order confirmation. A school always keeps at least one active headteacher. |
+| `coordinator` | Runs the school day to day: students and NFC cards, attendance, the timetable, dishes and servings, inventory (food received, food used) and reports. By default it may do all of these, and it can look at suppliers; it can't manage staff, approve suppliers or confirm orders. |
+| `supplier` | A food business with no school. It keeps a business profile (contacts, KRA PIN, registration number, areas served), the foods it supplies and its documents, and asks schools to work with it. |
 
 The headteacher can turn off what the coordinator may do on the **Permissions**
-screen (`school_role_permissions`). A login with no role sees only "Set up your
-school". Suppliers (still to be built) will be approved by each school itself.
+screen (`school_role_permissions`). A new login with no role sees "Set up your
+school" or "Set up your supplier account", depending on what was chosen at
+sign-up.
+
+### Suppliers
+
+There is no central verification: each school decides which suppliers it
+works with. A supplier can ask to supply a school (with a note), and the
+headteacher approves or declines it; the headteacher can also pick a supplier
+from the **Suppliers** directory and approve it straight away, and remove it
+later. A supplier can withdraw a request or stop supplying a school. Before
+deciding, the headteacher sees the supplier's details, foods and documents
+(PDFs or photos up to 10 MB, kept in a private Storage bucket). Any school's
+headteacher, and coordinators allowed to see orders, can browse every
+registered supplier; suppliers see only the list of schools (name, county,
+town) and where they stand with each.
+
+### Supply requests
+
+When a food is at or below its reorder level, or won't cover the selected
+meal, the **Distribution** screen shows it under **Running low**. The
+headteacher, or a coordinator allowed to see orders, can request an amount
+from one of the school's approved suppliers (those that list the food come
+first). The supplier sees the request under **Supply requests** and accepts or
+declines it, with a note. When the food arrives, staff who confirm deliveries
+record the amount on the **Requests** tab, which adds it to stock as a
+delivery from that supplier. A request can be cancelled until it's delivered
+(`supabase/fixes/015_supply_requests.sql`).
 
 ### Meal timetable
 
@@ -128,6 +155,10 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `reports` | Saved reports (export is planned) |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |
 | `audit_logs` | Who changed schools, staff, permissions, students, reorder levels and deliveries, and when |
+| `suppliers` | Each supplier's business profile, one per supplier login |
+| `supplier_foods` | The foods (from the shared list) each supplier offers |
+| `supplier_documents` | Each supplier's documents; the files are in the private Storage bucket `supplier-documents`, under the supplier's ID |
+| `school_suppliers` | Where each supplier stands with each school: `requested`, `approved`, `declined` or `removed` |
 | `food_distribution`, `central_transactions` | History of the retired central store (read-only) |
 
 Every school record has a `school_id`. Attendance, food used and stock
@@ -143,7 +174,11 @@ requires `session_verified()`: a password login can't see or change anything
 until its emailed code is entered (`login_codes`), while Google logins need
 no code. Headteachers list and edit their staff with `list_staff()` and
 `update_staff()`; a new account creates its school with
-`create_my_school()`. In the database, students are still called
+`create_my_school()`, or its supplier profile with `create_my_supplier()`.
+Suppliers and schools see each other through `supplier_school_directory()`
+and `school_supplier_directory()`, and links change only through
+`request_to_supply()`, `withdraw_from_school()` and (headteacher only)
+`set_school_supplier()`. In the database, students are still called
 `beneficiaries`. `nfc_tag_logs` deliberately has no foreign keys on the card
 and reader, so scans from unknown cards or unregistered readers are still
 recorded.
@@ -193,8 +228,9 @@ work (on school or office networks, for example), use `npx expo start --tunnel`.
 1. In Supabase, open **Authentication → Sign In / Providers** and turn **on**
    "Allow new users to sign up", and turn **off** "Confirm email" (the app
    checks the email itself with the 6-digit sign-in code, below).
-2. In the app, a headteacher taps **New headteacher? Create an account**,
-   enters their name, email and a password, then **Set up your school**:
+2. In the app, a headteacher taps **New headteacher or supplier? Create an
+   account**, picks **I'm a headteacher**, enters their name, email and a
+   password, then **Set up your school**:
    the school's name, and optionally county and area. They are now its
    headteacher, and the dashboard lists the first steps.
 3. Coordinators are added by the headteacher in **Staff → Add**, through the
@@ -211,6 +247,10 @@ work (on school or office networks, for example), use `npx expo start --tunnel`.
    someone in the list to suspend them (they can still sign in but see
    nothing) or set a new temporary password. To hand the school over, make a
    coordinator headteacher; they can then change your role.
+4. Suppliers sign up the same way with **I'm a supplier**, then fill in
+   **Set up your supplier account**. Fix 014 creates the private Storage
+   bucket `supplier-documents` and its access rules; nothing else needs
+   setting up. Use a different email from any school login.
 
 ### 4. Sign-in codes
 

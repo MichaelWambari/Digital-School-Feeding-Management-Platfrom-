@@ -11,9 +11,12 @@ import { Button } from '../components/Paper';
 export default function CreateSchoolScreen({
   defaultName,
   onCreated,
+  onSwitch,
 }: {
   defaultName: string;
   onCreated: () => void;
+  // Sets up a supplier account instead.
+  onSwitch: () => void;
 }) {
   const { colors, styles } = useThemedStyles(makeStyles);
   const [fullName, setFullName] = useState(defaultName === 'New User' ? '' : defaultName);
@@ -112,6 +115,9 @@ export default function CreateSchoolScreen({
             contentStyle={styles.buttonContent}
           >
             Create my school
+          </Button>
+          <Button mode="text" onPress={onSwitch} disabled={saving} style={styles.linkButton}>
+            I'm a food supplier instead
           </Button>
           <Button
             mode="text"

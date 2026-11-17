@@ -63,6 +63,7 @@ export default function DashboardScreen({ navigation }: any) {
     { label: 'Inventory', screen: 'Inventory', icon: 'package-variant-closed', available: seesStock },
     { label: 'Distribution', screen: 'Distribution', icon: 'truck-delivery-outline', available: seesStock },
     { label: 'Reports', screen: 'Reports', icon: 'chart-box-outline', available: can('view_reports') },
+    { label: 'Suppliers', screen: 'Suppliers', icon: 'truck-outline', available: can('view_procurement') },
     ...(isHeadteacher
       ? [
           { label: 'Staff', screen: 'Staff', icon: 'account-key-outline', available: true },

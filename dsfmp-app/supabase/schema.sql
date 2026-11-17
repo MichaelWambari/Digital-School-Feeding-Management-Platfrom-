@@ -54,6 +54,35 @@
   drop function if exists public.list_schools() cascade;
   drop function if exists public.set_school_status(uuid, text) cascade;
 
+  -- added by fix 015
+  drop table if exists supply_requests cascade;
+  drop function if exists public.request_supply(uuid, uuid, numeric, text) cascade;
+  drop function if exists public.cancel_supply_request(uuid) cascade;
+  drop function if exists public.receive_supply_request(uuid, numeric) cascade;
+  drop function if exists public.school_supply_requests() cascade;
+  drop function if exists public.supplier_supply_requests() cascade;
+  drop function if exists public.respond_supply_request(uuid, boolean, text) cascade;
+
+  -- added by fix 014
+  drop table if exists school_suppliers cascade;
+  drop table if exists supplier_documents cascade;
+  drop table if exists supplier_foods cascade;
+  drop table if exists suppliers cascade;
+  drop function if exists public.my_supplier_id() cascade;
+  drop function if exists public.can_review_suppliers() cascade;
+  drop function if exists public.my_headteacher_school() cascade;
+  drop function if exists public.clean_supplier_fields(text, text, text, text) cascade;
+  drop function if exists public.create_my_supplier(text, text, text, text, text, text, text, text, text) cascade;
+  drop function if exists public.update_my_supplier(text, text, text, text, text, text, text, text, text) cascade;
+  drop function if exists public.set_my_supplier_foods(uuid[]) cascade;
+  drop function if exists public.add_supplier_document(text, text, text, text, text, bigint) cascade;
+  drop function if exists public.remove_supplier_document(uuid) cascade;
+  drop function if exists public.supplier_school_directory() cascade;
+  drop function if exists public.request_to_supply(uuid, text) cascade;
+  drop function if exists public.withdraw_from_school(uuid) cascade;
+  drop function if exists public.school_supplier_directory() cascade;
+  drop function if exists public.set_school_supplier(uuid, text, text) cascade;
+
   -- added by fix 013
   drop function if exists public.create_my_school(text, text, text, text, text) cascade;
   drop function if exists public.check_food_name() cascade;

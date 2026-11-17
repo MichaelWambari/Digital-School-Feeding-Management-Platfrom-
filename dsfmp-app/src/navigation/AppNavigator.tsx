@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeContext';
-import { AccountProvider } from '../school/SchoolContext';
+import { AccountKind, AccountProvider } from '../school/SchoolContext';
 import { FadeIn } from '../components/Motion';
 
 import LoginScreen from '../screens/LoginScreen';
@@ -22,11 +22,29 @@ import SchoolProfileScreen from '../screens/SchoolProfileScreen';
 import TimetableScreen from '../screens/TimetableScreen';
 import StudentReportScreen from '../screens/StudentReportScreen';
 import FoodValuesScreen from '../screens/FoodValuesScreen';
+import SuppliersScreen from '../screens/SuppliersScreen';
+import SupplierDetailScreen from '../screens/SupplierDetailScreen';
+import SupplierHomeScreen from '../screens/SupplierHomeScreen';
+import SupplierProfileScreen from '../screens/SupplierProfileScreen';
+import SupplierDocumentsScreen from '../screens/SupplierDocumentsScreen';
+import SupplierSchoolsScreen from '../screens/SupplierSchoolsScreen';
+import SupplierRequestsScreen from '../screens/SupplierRequestsScreen';
 
 const Stack = createNativeStackNavigator();
 
-// The signed-in screens of the user's school.
-function accountScreens() {
+// The signed-in screens: a school's, or a supplier's.
+function accountScreens(kind: AccountKind) {
+  if (kind === 'supplier') {
+    return (
+      <>
+        <Stack.Screen name="SupplierHome" component={SupplierHomeScreen} />
+        <Stack.Screen name="SupplierProfile" component={SupplierProfileScreen} />
+        <Stack.Screen name="SupplierDocuments" component={SupplierDocumentsScreen} />
+        <Stack.Screen name="SupplierSchools" component={SupplierSchoolsScreen} />
+        <Stack.Screen name="SupplierRequests" component={SupplierRequestsScreen} />
+      </>
+    );
+  }
   return (
     <>
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
@@ -41,6 +59,8 @@ function accountScreens() {
       <Stack.Screen name="Timetable" component={TimetableScreen} />
       <Stack.Screen name="StudentReport" component={StudentReportScreen} />
       <Stack.Screen name="FoodValues" component={FoodValuesScreen} />
+      <Stack.Screen name="Suppliers" component={SuppliersScreen} />
+      <Stack.Screen name="SupplierDetail" component={SupplierDetailScreen} />
     </>
   );
 }
@@ -118,7 +138,7 @@ export default function AppNavigator() {
   // Screens slide in on phones; the web has no native transitions, so each
   // screen fades in instead. The keyboard view lifts screens above the
   // on-screen keyboard so the field being typed in stays visible.
-  const navigator = (
+  const navigator = (kind: AccountKind | null) => (
     <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={Platform.OS !== 'web'}>
       <NavigationContainer theme={navigationTheme}>
         <Stack.Navigator
@@ -129,8 +149,8 @@ export default function AppNavigator() {
               : undefined
           }
         >
-          {session ? (
-            accountScreens()
+          {kind ? (
+            accountScreens(kind)
           ) : (
             <Stack.Screen name="Login" component={LoginScreen} />
           )}
@@ -141,9 +161,9 @@ export default function AppNavigator() {
 
   // Keyed by user so a new login reloads the account.
   return session ? (
-    <AccountProvider key={session.user.id}>{navigator}</AccountProvider>
+    <AccountProvider key={session.user.id}>{(kind) => navigator(kind)}</AccountProvider>
   ) : (
-    navigator
+    navigator(null)
   );
 }
 
