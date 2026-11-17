@@ -4,11 +4,13 @@
 // The same reader as firmware/wokwi, with a real PN532 NFC reader
 // in place of the demo buttons. Each card tap calls the
 // record_nfc_scan database function over HTTPS and shows the
-// result on the LCD, LEDs and buzzer.
+// result on the Serial Monitor and, if fitted, the LCD, LEDs and
+// buzzer (HAS_DISPLAY).
 //
-// The PN532 runs in I2C mode (switch 1 ON, switch 2 OFF) and
-// shares SDA/SCL with the LCD. A card ID typed into the Serial
-// Monitor still counts as a tap, for testing without a card.
+// The PN532 runs in I2C mode (SET0 H, SET1 L), sharing SDA/SCL
+// with the LCD, or in SPI mode (SET0 L, SET1 H; PN532_USE_SPI).
+// A card ID typed into the Serial Monitor still counts as a tap,
+// for testing without a card.
 // ============================================================
 
 #include <WiFi.h>
@@ -33,6 +35,15 @@ const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 // reader-jasiri-01, reader-tumaini-01, reader-upendo-01 and reader-baraka-01.
 const char *DEVICE_ID = "reader-tumaini-01";
 
+// true when the LCD, LEDs and buzzer are wired up. With false only the
+// ESP32 and the PN532 are needed: results go to the Serial Monitor and
+// the board's own LED flashes (green/red on the C3's RGB LED).
+const bool HAS_DISPLAY = false;
+
+// 0 = PN532 on I2C (switches SET0 H, SET1 L),
+// 1 = PN532 on SPI (switches SET0 L, SET1 H).
+#define PN532_USE_SPI 0
+
 // Pins. The PN532 and the LCD share the I2C bus (SDA/SCL).
 #if CONFIG_IDF_TARGET_ESP32C3
 // ESP32-C3 DevKit. Avoids 2/8/9 (boot pins), 18/19 (USB)
@@ -41,18 +52,31 @@ const int I2C_SDA_PIN = 4;
 const int I2C_SCL_PIN = 5;
 const int PN532_IRQ_PIN = 6;
 const int PN532_RST_PIN = 7;
+// SPI mode reuses the same four wires.
+const int PN532_SCK_PIN = 4;
+const int PN532_MISO_PIN = 5;
+const int PN532_MOSI_PIN = 6;
+const int PN532_SS_PIN = 7;
 const int GREEN_LED_PIN = 0;
 const int RED_LED_PIN = 1;
 const int BUZZER_PIN = 10;
+const int BOARD_LED_PIN = 8;  // on-board RGB LED
+const bool BOARD_LED_RGB = true;
 #else
 // Classic ESP32 (WROOM) DevKit.
 const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
 const int PN532_IRQ_PIN = 4;
 const int PN532_RST_PIN = 15;
+const int PN532_SCK_PIN = 18;
+const int PN532_MISO_PIN = 19;
+const int PN532_MOSI_PIN = 23;
+const int PN532_SS_PIN = 5;
 const int GREEN_LED_PIN = 25;
 const int RED_LED_PIN = 26;
 const int BUZZER_PIN = 33;
+const int BOARD_LED_PIN = 2;  // on-board blue LED
+const bool BOARD_LED_RGB = false;
 #endif
 
 // A card left on the reader is read again and again; ignore
@@ -62,7 +86,11 @@ const unsigned long REPEAT_TAP_MS = 3000;
 // ------------------------------------------
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+#if PN532_USE_SPI
+Adafruit_PN532 nfc(PN532_SCK_PIN, PN532_MISO_PIN, PN532_MOSI_PIN, PN532_SS_PIN);
+#else
 Adafruit_PN532 nfc(PN532_IRQ_PIN, PN532_RST_PIN);
+#endif
 String serialBuffer;
 String lastCard;
 unsigned long lastCardAt = 0;
@@ -70,13 +98,19 @@ bool nfcReady = false;
 
 void setup() {
   Serial.begin(115200);
-  pinMode(GREEN_LED_PIN, OUTPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
+  if (HAS_DISPLAY) {
+    pinMode(GREEN_LED_PIN, OUTPUT);
+    pinMode(RED_LED_PIN, OUTPUT);
+  } else if (!BOARD_LED_RGB) {
+    pinMode(BOARD_LED_PIN, OUTPUT);
+  }
 
   // Set the I2C pins before the LCD and PN532 libraries start the bus.
   Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
-  lcd.init();
-  lcd.backlight();
+  if (HAS_DISPLAY) {
+    lcd.init();
+    lcd.backlight();
+  }
 
   startNfc();
   connectWifi();
@@ -103,7 +137,8 @@ void startNfc() {
   uint32_t version = nfc.getFirmwareVersion();
   if (!version) {
     Serial.println("PN532 not found. Check the wiring, that the switches are");
-    Serial.println("set to I2C (SET0 H, SET1 L), and power-cycle the board.");
+    Serial.println(PN532_USE_SPI ? "set to SPI (SET0 L, SET1 H), and power-cycle the board."
+                                 : "set to I2C (SET0 H, SET1 L), and power-cycle the board.");
     Serial.println("Carrying on without NFC: type card IDs in the Serial Monitor.");
     showMessage("NFC not found", "Serial only");
     delay(2000);
@@ -231,6 +266,10 @@ String describeError(const String &error) {
 }
 
 void feedback(bool ok) {
+  if (!HAS_DISPLAY) {
+    boardLedFeedback(ok);
+    return;
+  }
   int led = ok ? GREEN_LED_PIN : RED_LED_PIN;
   digitalWrite(led, HIGH);
   if (ok) {
@@ -259,7 +298,28 @@ void showIdle() {
   showMessage("DSFMP reader", "Tap card...");
 }
 
+// Without the LEDs, flash the board's own LED: green (or one long
+// blink) for a recorded meal, red (or three short blinks) otherwise.
+void boardLedFeedback(bool ok) {
+  if (BOARD_LED_RGB) {
+    if (ok) rgbLedWrite(BOARD_LED_PIN, 0, 40, 0);
+    else rgbLedWrite(BOARD_LED_PIN, 40, 0, 0);
+    delay(800);
+    rgbLedWrite(BOARD_LED_PIN, 0, 0, 0);
+    return;
+  }
+  int blinks = ok ? 1 : 3;
+  int onMs = ok ? 800 : 150;
+  for (int i = 0; i < blinks; i++) {
+    digitalWrite(BOARD_LED_PIN, HIGH);
+    delay(onMs);
+    digitalWrite(BOARD_LED_PIN, LOW);
+    delay(150);
+  }
+}
+
 void showMessage(const String &line1, const String &line2) {
+  if (!HAS_DISPLAY) return;
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(line1.substring(0, 16));

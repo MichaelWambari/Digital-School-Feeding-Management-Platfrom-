@@ -29,6 +29,30 @@ picks the pins for the board it is compiled for.
 | Green LED / red LED (220 Ω) | | 25 / 26 | 0 / 1 |
 | Buzzer | | 33 | 10 |
 
+### PN532 only (no LCD, LEDs or buzzer)
+
+Set `HAS_DISPLAY = false` in `reader.ino` (the default). Results go to the
+Serial Monitor, and the board's own LED flashes: green or red on the C3's
+RGB LED, or one long or three short blinks on a WROOM's blue LED. Power the
+PN532 from **5V**, not 3V3, because its regulator needs the headroom. Its
+signal pins are still 3.3 V, so they connect straight to the ESP32.
+
+| PN532 pin | I2C (`PN532_USE_SPI 0`, SET0 H, SET1 L) | SPI (`PN532_USE_SPI 1`, SET0 L, SET1 H) | C3 / WROOM |
+|---|---|---|---|
+| 5V | 5V | 5V | 5V / VIN |
+| GND | GND | GND | GND |
+| SDA (MO) | SDA | MOSI | 4 / 21 (SPI: 6 / 23) |
+| SCL (NSS) | SCL | SS | 5 / 22 (SPI: 7 / 5) |
+| IRQ | optional | not connected | 6 / 4 |
+| RST | optional | not connected | 7 / 15 |
+
+In I2C mode only four wires are needed (5V, GND, SDA, SCL). The library
+checks the PN532's ready flag over I2C rather than through IRQ, and the board
+holds RST high by itself. The PN532's **SCK** pin is the SPI clock, not the
+I2C clock: in I2C mode, use **SCL**.
+| SCK | not connected | SCK | SPI: 4 / 18 |
+| MI | not connected | MISO | SPI: 5 / 19 |
+
 In the Arduino IDE, pick **ESP32 Dev Module** for a WROOM board or
 **ESP32C3 Dev Module** for a C3. A C3 board with a CP2102N USB chip needs the
 Silicon Labs CP210x driver on Windows before it gets a COM port.
