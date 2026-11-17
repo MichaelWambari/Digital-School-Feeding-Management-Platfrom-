@@ -18,27 +18,51 @@ type NutrientKey =
   | 'fibre_g'
   | 'calcium_mg'
   | 'iron_mg'
+  | 'magnesium_mg'
   | 'zinc_mg'
   | 'vitamin_a_ug'
-  | 'vitamin_c_mg';
+  | 'thiamin_mg'
+  | 'riboflavin_mg'
+  | 'niacin_mg'
+  | 'folate_ug'
+  | 'vitamin_b12_ug'
+  | 'vitamin_c_mg'
+  | 'phytate_mg';
 type Record_ = {
   attendance_id: string;
   meal_name: string | null;
   complete: boolean;
 } & Partial<Record<NutrientKey, number | null>>;
 
-const NUTRIENTS: { key: NutrientKey; label: string; unit: string; digits: number }[] = [
-  { key: 'energy_kcal', label: 'Energy', unit: 'kcal', digits: 0 },
-  { key: 'protein_g', label: 'Protein', unit: 'g', digits: 1 },
-  { key: 'carbohydrate_g', label: 'Carbohydrates', unit: 'g', digits: 1 },
-  { key: 'fat_g', label: 'Fat', unit: 'g', digits: 1 },
-  { key: 'fibre_g', label: 'Fibre', unit: 'g', digits: 1 },
-  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', digits: 0 },
-  { key: 'iron_mg', label: 'Iron', unit: 'mg', digits: 1 },
-  { key: 'zinc_mg', label: 'Zinc', unit: 'mg', digits: 1 },
-  { key: 'vitamin_a_ug', label: 'Vitamin A', unit: 'µg', digits: 0 },
-  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg', digits: 0 },
+type Nutrient = { key: NutrientKey; label: string; unit: string; digits: number; micro: boolean };
+// Micronutrients first: they are what school meals most often fall short on.
+// Folate is in dietary folate equivalents; vitamin A in retinol activity equivalents.
+const NUTRIENTS: Nutrient[] = [
+  { key: 'iron_mg', label: 'Iron', unit: 'mg', digits: 1, micro: true },
+  { key: 'zinc_mg', label: 'Zinc', unit: 'mg', digits: 1, micro: true },
+  { key: 'vitamin_a_ug', label: 'Vitamin A', unit: 'µg RAE', digits: 0, micro: true },
+  { key: 'folate_ug', label: 'Folate', unit: 'µg DFE', digits: 0, micro: true },
+  { key: 'vitamin_b12_ug', label: 'Vitamin B12', unit: 'µg', digits: 2, micro: true },
+  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', digits: 0, micro: true },
+  { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg', digits: 0, micro: true },
+  { key: 'thiamin_mg', label: 'Thiamin (B1)', unit: 'mg', digits: 2, micro: true },
+  { key: 'riboflavin_mg', label: 'Riboflavin (B2)', unit: 'mg', digits: 2, micro: true },
+  { key: 'niacin_mg', label: 'Niacin (B3)', unit: 'mg', digits: 1, micro: true },
+  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg', digits: 0, micro: true },
+  { key: 'energy_kcal', label: 'Energy', unit: 'kcal', digits: 0, micro: false },
+  { key: 'protein_g', label: 'Protein', unit: 'g', digits: 1, micro: false },
+  { key: 'carbohydrate_g', label: 'Carbohydrates', unit: 'g', digits: 1, micro: false },
+  { key: 'fat_g', label: 'Fat', unit: 'g', digits: 1, micro: false },
+  { key: 'fibre_g', label: 'Fibre', unit: 'g', digits: 1, micro: false },
 ];
+
+// Phytate:zinc molar ratio (phytate 660 g/mol, zinc 65.4 g/mol). Above 15
+// means low zinc absorption, 5-15 moderate, below 5 good (WHO/FAO, 2004).
+function phytateZinc(phytateMg: number, zincMg: number) {
+  if (zincMg <= 0 || phytateMg <= 0) return null;
+  const ratio = phytateMg / 660 / (zincMg / 65.4);
+  return { ratio, level: ratio > 15 ? 'low' : ratio >= 5 ? 'moderate' : 'good' };
+}
 
 const MEALS: MealType[] = ['breakfast', 'lunch', 'supper'];
 const MEAL_LABELS: Record<MealType, string> = { breakfast: 'Breakfast', lunch: 'Lunch', supper: 'Supper' };
@@ -96,7 +120,8 @@ export default function StudentReportScreen({ navigation, route }: any) {
       seesNutrition
         ? supabase
             .from('attendance_nutrition')
-            .select('attendance_id, meal_name, complete, ' + NUTRIENTS.map((n) => n.key).join(', '))
+            // '*' so the report still loads before fix 017 adds the micronutrient columns.
+            .select('*')
             .eq('beneficiary_id', beneficiaryId)
             .gte('attendance_date', start)
         : Promise.resolve({ data: [], error: null }),
@@ -122,19 +147,25 @@ export default function StudentReportScreen({ navigation, route }: any) {
     const energyByDay = new Map<string, number>();
     let estimated = 0;
     let incomplete = 0;
+    // Meals recorded before fix 017 have no folate, B12 etc.
+    let older = 0;
+    let phytate = 0;
     for (const a of attendance) {
       byMeal[a.meal_type] = (byMeal[a.meal_type] ?? 0) + 1;
       const r = records.get(a.attendance_id);
       if (r && r.meal_name) {
         estimated += 1;
         if (!r.complete) incomplete += 1;
+        if (r.folate_ug == null) older += 1;
         for (const n of NUTRIENTS) totals[n.key] += Number(r[n.key] ?? 0);
+        phytate += Number(r.phytate_mg ?? 0);
         energyByDay.set(a.attendance_date, (energyByDay.get(a.attendance_date) ?? 0) + Number(r.energy_kcal ?? 0));
       }
     }
     const daysFed = new Set(attendance.map((a) => a.attendance_date)).size;
     const daysEstimated = energyByDay.size;
-    return { byMeal, totals, energyByDay, estimated, incomplete, daysFed, daysEstimated };
+    const absorption = phytateZinc(phytate, totals.zinc_mg);
+    return { byMeal, totals, energyByDay, estimated, incomplete, older, absorption, daysFed, daysEstimated };
   }, [attendance, records]);
 
   // The last 14 days of the range, oldest first, for the energy chart.
@@ -180,29 +211,52 @@ export default function StudentReportScreen({ navigation, route }: any) {
           ) : (
             <Card mode="contained" style={styles.card}>
               <Card.Content>
-                <View style={styles.tableHead}>
-                  <Text variant="labelMedium" style={styles.cellName}>Nutrient</Text>
-                  <Text variant="labelMedium" style={styles.cellValue}>Per day</Text>
-                  <Text variant="labelMedium" style={styles.cellValue}>Total</Text>
-                </View>
-                {NUTRIENTS.map((n) => (
-                  <View key={n.key} style={styles.tableRow}>
-                    <Text variant="bodyMedium" style={styles.cellName}>{n.label}</Text>
-                    <Text variant="bodyMedium" style={styles.cellValue}>
-                      {fmt(summary.totals[n.key] / Math.max(1, summary.daysEstimated), n.digits)} {n.unit}
-                    </Text>
-                    <Text variant="bodyMedium" style={styles.cellValue}>
-                      {fmt(summary.totals[n.key], n.digits)} {n.unit}
-                    </Text>
+                {[true, false].map((micro) => (
+                  <View key={String(micro)}>
+                    <View style={[styles.tableHead, !micro && styles.tableGap]}>
+                      <Text variant="labelMedium" style={styles.cellName}>
+                        {micro ? 'Micronutrients' : 'Energy and macronutrients'}
+                      </Text>
+                      <Text variant="labelMedium" style={styles.cellValue}>Per day</Text>
+                      <Text variant="labelMedium" style={styles.cellValue}>Total</Text>
+                    </View>
+                    {NUTRIENTS.filter((n) => n.micro === micro).map((n) => (
+                      <View key={n.key} style={styles.tableRow}>
+                        <Text variant="bodyMedium" style={styles.cellName}>{n.label}</Text>
+                        <Text variant="bodyMedium" style={styles.cellValue}>
+                          {fmt(summary.totals[n.key] / Math.max(1, summary.daysEstimated), n.digits)} {n.unit}
+                        </Text>
+                        <Text variant="bodyMedium" style={styles.cellValue}>
+                          {fmt(summary.totals[n.key], n.digits)} {n.unit}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
                 ))}
+                {summary.absorption && (
+                  <View style={styles.absorption}>
+                    <Text variant="bodyMedium" style={styles.cellName}>Zinc absorption</Text>
+                    <StatusPill
+                      label={`${summary.absorption.level} · phytate:zinc ${fmt(summary.absorption.ratio, 0)}`}
+                      tone={summary.absorption.level === 'low' ? 'warning' : summary.absorption.level === 'moderate' ? 'info' : 'success'}
+                    />
+                  </View>
+                )}
                 <Text variant="bodySmall" style={styles.footnote}>
-                  Per day = average over the {summary.daysEstimated} days with an estimate.
+                  Per day = average over the {summary.daysEstimated} days with an estimate. Values are
+                  from the Kenya Food Composition Tables 2018.
+                  {summary.absorption
+                    ? ' Phytate in whole maize and beans binds zinc and iron: above 15, much of the zinc ' +
+                      "isn't absorbed (WHO/FAO). Foods with no phytate value count as none."
+                    : ''}
                   {summary.estimated < attendance.length
                     ? ` ${attendance.length - summary.estimated} meals had no dish or serving set and aren't counted.`
                     : ''}
                   {summary.incomplete > 0
                     ? ` ${summary.incomplete} meals used a food with missing values, so some totals are low.`
+                    : ''}
+                  {summary.older > 0
+                    ? ` ${summary.older} meals were recorded before folate, B12 and the B vitamins were tracked, so those totals are low.`
                     : ''}
                 </Text>
               </Card.Content>
@@ -281,6 +335,8 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   card: { borderRadius: 16 },
   tableHead: { flexDirection: 'row', paddingBottom: 6 },
   tableRow: { flexDirection: 'row', paddingVertical: 4 },
+  tableGap: { marginTop: 14 },
+  absorption: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
   cellName: { flex: 1.3, color: c.text },
   cellValue: { flex: 1, color: c.textSecondary, textAlign: 'right' },
   footnote: { color: c.textMuted, marginTop: 10 },

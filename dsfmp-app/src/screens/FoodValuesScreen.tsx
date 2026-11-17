@@ -8,27 +8,44 @@ import { FadeInScrollView } from '../components/Motion';
 import { Button, ListItem } from '../components/Paper';
 import { EmptyText, Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
 
+// Grouped as on the edit form. Folate is in dietary folate equivalents,
+// which count folic acid added to fortified flour 1.7 times (as KFCT does).
 const NUTRIENTS = [
-  { key: 'energy_kcal', label: 'Energy', unit: 'kcal' },
-  { key: 'protein_g', label: 'Protein', unit: 'g' },
-  { key: 'carbohydrate_g', label: 'Carbohydrates', unit: 'g' },
-  { key: 'fat_g', label: 'Fat', unit: 'g' },
-  { key: 'fibre_g', label: 'Fibre', unit: 'g' },
-  { key: 'calcium_mg', label: 'Calcium', unit: 'mg' },
-  { key: 'iron_mg', label: 'Iron', unit: 'mg' },
-  { key: 'zinc_mg', label: 'Zinc', unit: 'mg' },
-  { key: 'vitamin_a_ug', label: 'Vitamin A', unit: 'µg RAE' },
-  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg' },
+  { key: 'iron_mg', label: 'Iron', unit: 'mg', group: 'Minerals' },
+  { key: 'zinc_mg', label: 'Zinc', unit: 'mg', group: 'Minerals' },
+  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', group: 'Minerals' },
+  { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg', group: 'Minerals' },
+  { key: 'vitamin_a_ug', label: 'Vitamin A', unit: 'µg RAE', group: 'Vitamins' },
+  { key: 'folate_ug', label: 'Folate', unit: 'µg DFE', group: 'Vitamins' },
+  { key: 'vitamin_b12_ug', label: 'Vitamin B12', unit: 'µg', group: 'Vitamins' },
+  { key: 'thiamin_mg', label: 'Thiamin (B1)', unit: 'mg', group: 'Vitamins' },
+  { key: 'riboflavin_mg', label: 'Riboflavin (B2)', unit: 'mg', group: 'Vitamins' },
+  { key: 'niacin_mg', label: 'Niacin (B3)', unit: 'mg', group: 'Vitamins' },
+  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg', group: 'Vitamins' },
+  { key: 'phytate_mg', label: 'Phytate', unit: 'mg', group: 'Absorption' },
+  { key: 'energy_kcal', label: 'Energy', unit: 'kcal', group: 'Energy and macronutrients' },
+  { key: 'protein_g', label: 'Protein', unit: 'g', group: 'Energy and macronutrients' },
+  { key: 'carbohydrate_g', label: 'Carbohydrates', unit: 'g', group: 'Energy and macronutrients' },
+  { key: 'fat_g', label: 'Fat', unit: 'g', group: 'Energy and macronutrients' },
+  { key: 'fibre_g', label: 'Fibre', unit: 'g', group: 'Energy and macronutrients' },
 ] as const;
 type NutrientKey = (typeof NUTRIENTS)[number]['key'];
+const GROUP_NOTES: Record<string, string> = {
+  Absorption:
+    'Phytate, in whole grains and legumes, lowers how much iron and zinc the body absorbs. Empty means not known.',
+};
 
 type FoodValues = {
   food_id: string;
   item_name: string;
   unit: string;
   source: string | null;
+  kfct_code?: string | null; // KFCT 2018 food code of the shared values (fix 017)
   is_school_value: boolean;
 } & Record<NutrientKey, number | null>;
+
+// A value for display; values not in the database yet (before fix 017) show as unknown.
+const show = (v: number | null | undefined) => (v == null ? '?' : String(Number(v)));
 
 const per100 = (f: { unit: string }) => (f.unit === 'litres' ? '100 ml' : '100 g');
 
@@ -84,7 +101,8 @@ export default function FoodValuesScreen({ navigation }: any) {
       <ScreenHeader title="Food values" onBack={() => navigation.goBack()} />
       <Text variant="bodySmall" style={styles.hint}>
         Nutrients per 100 g (100 ml for liquids), used to estimate what each serving provides.
-        The shared values are approximate figures from the Kenya Food Composition Tables 2018.
+        The shared values are from the Kenya Food Composition Tables 2018 (FAO/Government of
+        Kenya), with the KFCT food code shown.
       </Text>
       <Searchbar
         value={search}
@@ -108,8 +126,9 @@ export default function FoodValuesScreen({ navigation }: any) {
               title={item.item_name}
               description={
                 known
-                  ? `Per ${per100(item)}: ${Number(item.energy_kcal)} kcal · ${Number(item.protein_g ?? 0)} g protein` +
-                    `\n${item.source ?? ''}`
+                  ? `Per ${per100(item)}: iron ${show(item.iron_mg)} mg · zinc ${show(item.zinc_mg)} mg · ` +
+                    `vitamin A ${show(item.vitamin_a_ug)} µg · folate ${show(item.folate_ug)} µg` +
+                    `\n${item.kfct_code ? `KFCT ${item.kfct_code}` : item.source ?? ''}`
                   : 'No values yet'
               }
               descriptionNumberOfLines={2}
@@ -143,7 +162,7 @@ function EditValuesView({
   const { can } = useSchool();
   const canEdit = can('manage_meals');
   const [values, setValues] = useState<Record<NutrientKey, string>>(
-    () => Object.fromEntries(NUTRIENTS.map((n) => [n.key, food[n.key] === null ? '' : String(Number(food[n.key]))])) as Record<NutrientKey, string>
+    () => Object.fromEntries(NUTRIENTS.map((n) => [n.key, food[n.key] == null ? '' : String(Number(food[n.key]))])) as Record<NutrientKey, string>
   );
   const [source, setSource] = useState(food.is_school_value ? food.source ?? '' : '');
   const [saving, setSaving] = useState(false);
@@ -203,15 +222,24 @@ function EditValuesView({
         <Text variant="bodySmall" style={styles.hint}>View only. Staff who manage meals can change these.</Text>
       )}
 
-      {NUTRIENTS.map((n) => (
-        <Field
-          key={n.key}
-          label={`${n.label} (${n.unit})`}
-          value={values[n.key]}
-          onChangeText={(text) => setValues({ ...values, [n.key]: text })}
-          keyboardType="decimal-pad"
-          disabled={!canEdit}
-        />
+      {NUTRIENTS.map((n, i) => (
+        <View key={n.key}>
+          {(i === 0 || NUTRIENTS[i - 1].group !== n.group) && (
+            <>
+              <Text variant="titleSmall" style={styles.groupTitle}>{n.group}</Text>
+              {GROUP_NOTES[n.group] && (
+                <Text variant="bodySmall" style={styles.hint}>{GROUP_NOTES[n.group]}</Text>
+              )}
+            </>
+          )}
+          <Field
+            label={`${n.label} (${n.unit})`}
+            value={values[n.key]}
+            onChangeText={(text) => setValues({ ...values, [n.key]: text })}
+            keyboardType="decimal-pad"
+            disabled={!canEdit}
+          />
+        </View>
       ))}
 
       {canEdit && (
@@ -220,7 +248,7 @@ function EditValuesView({
             label="Source *"
             value={source}
             onChangeText={setSource}
-            placeholder="e.g. Packet label, or KFCT 2018 code 01_001"
+            placeholder="e.g. Packet label, or KFCT 2018 code 01022"
           />
           <Text variant="bodySmall" style={styles.hint}>
             Saving makes these {'your school\'s own'} values for {food.item_name}. Other schools keep theirs.
@@ -247,6 +275,7 @@ function EditValuesView({
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
   hint: { color: c.textMuted, marginBottom: 8 },
+  groupTitle: { color: c.text, marginTop: 16, marginBottom: 4 },
   search: { backgroundColor: c.surface },
   list: { marginTop: 12 },
   row: { paddingLeft: 0, paddingRight: 0 },
