@@ -42,7 +42,12 @@ const bool HAS_DISPLAY = false;
 
 // 0 = PN532 on I2C (switches SET0 H, SET1 L),
 // 1 = PN532 on SPI (switches SET0 L, SET1 H).
-#define PN532_USE_SPI 0
+#define PN532_USE_SPI 1
+
+// 1 = wait for the PN532's IRQ pin to signal a card (IRQ must be
+// wired), so the ESP32 isn't kept busy asking the PN532 over and
+// over. 0 = poll for a card every pass of loop() (no IRQ wire needed).
+#define PN532_USE_IRQ 1
 
 // Pins. The PN532 and the LCD share the I2C bus (SDA/SCL).
 #if CONFIG_IDF_TARGET_ESP32C3
@@ -50,7 +55,8 @@ const bool HAS_DISPLAY = false;
 // and 20/21 (the USB serial port).
 const int I2C_SDA_PIN = 4;
 const int I2C_SCL_PIN = 5;
-const int PN532_IRQ_PIN = 6;
+// In SPI mode GPIO 6 is MOSI, so IRQ moves to GPIO 3.
+const int PN532_IRQ_PIN = PN532_USE_SPI ? 3 : 6;
 const int PN532_RST_PIN = 7;
 // SPI mode reuses the same four wires.
 const int PN532_SCK_PIN = 4;
@@ -95,9 +101,21 @@ String serialBuffer;
 String lastCard;
 unsigned long lastCardAt = 0;
 bool nfcReady = false;
+// IRQ mode: true while the PN532 is searching for a card, and set
+// by the interrupt when the PN532 pulls IRQ low with a result.
+bool nfcDetecting = false;
+volatile bool nfcIrqFired = false;
+
+void IRAM_ATTR onNfcIrq() {
+  nfcIrqFired = true;
+}
 
 void setup() {
   Serial.begin(115200);
+  // The C3's USB serial port reconnects after a reset; wait briefly so
+  // the startup messages aren't lost.
+  unsigned long serialWaitStart = millis();
+  while (!Serial && millis() - serialWaitStart < 3000) delay(10);
   if (HAS_DISPLAY) {
     pinMode(GREEN_LED_PIN, OUTPUT);
     pinMode(RED_LED_PIN, OUTPUT);
@@ -147,14 +165,41 @@ void startNfc() {
   nfcReady = true;
   Serial.printf("PN532 found, firmware %d.%d\n", (version >> 16) & 0xFF, (version >> 8) & 0xFF);
   nfc.SAMConfig();
+#if PN532_USE_IRQ
+  pinMode(PN532_IRQ_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(PN532_IRQ_PIN), onNfcIrq, FALLING);
+  Serial.printf("Waiting for cards on IRQ (GPIO %d).\n", PN532_IRQ_PIN);
+#endif
+}
+
+// Reads a card's UID into uid. In IRQ mode this only talks to the
+// PN532 once it has signalled a card; otherwise it polls briefly.
+bool readUid(uint8_t *uid, uint8_t *uidLength) {
+  if (!nfcReady) return false;
+#if PN532_USE_IRQ
+  if (!nfcDetecting) {
+    // The PN532 keeps searching until a card shows up, then pulls IRQ low.
+    nfcDetecting = nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
+    nfcIrqFired = false;
+    return false;
+  }
+  // IRQ stays low until the result is read, so the level check also
+  // catches a card that answered before the flag was cleared above.
+  if (!nfcIrqFired && digitalRead(PN532_IRQ_PIN) == HIGH) return false;
+  nfcIrqFired = false;
+  nfcDetecting = false;  // search again on the next call
+  return nfc.readDetectedPassiveTargetID(uid, uidLength);
+#else
+  // Short timeout so the Serial Monitor is still checked between reads.
+  return nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, uidLength, 50);
+#endif
 }
 
 // Returns the ID of a card that was just tapped, or "" if none.
 String readCard() {
   uint8_t uid[7];
   uint8_t uidLength;
-  // Short timeout so the Serial Monitor is still checked between reads.
-  if (nfcReady && nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 50)) {
+  if (readUid(uid, &uidLength)) {
     String card;
     for (uint8_t i = 0; i < uidLength; i++) {
       if (uid[i] < 0x10) card += "0";

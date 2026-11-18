@@ -43,15 +43,19 @@ signal pins are still 3.3 V, so they connect straight to the ESP32.
 | GND | GND | GND | GND |
 | SDA (MO) | SDA | MOSI | 4 / 21 (SPI: 6 / 23) |
 | SCL (NSS) | SCL | SS | 5 / 22 (SPI: 7 / 5) |
-| IRQ | optional | not connected | 6 / 4 |
-| RST | optional | not connected | 7 / 15 |
-
-In I2C mode only four wires are needed (5V, GND, SDA, SCL). The library
-checks the PN532's ready flag over I2C rather than through IRQ, and the board
-holds RST high by itself. The PN532's **SCK** pin is the SPI clock, not the
-I2C clock: in I2C mode, use **SCL**.
 | SCK | not connected | SCK | SPI: 4 / 18 |
 | MI | not connected | MISO | SPI: 5 / 19 |
+| IRQ | IRQ | IRQ | 6 / 4 (SPI: 3 / 4) |
+| RST | optional | not connected | 7 / 15 |
+
+With `PN532_USE_IRQ 1` (the default) the PN532 searches for a card by
+itself and pulls **IRQ** low when it finds one, so the ESP32 only talks to
+it when there is a card to read. IRQ must then be wired, or no card is ever
+read. With `PN532_USE_IRQ 0` the ESP32 asks the PN532 for a card on every
+pass of `loop()` instead, and IRQ can be left unconnected.
+
+The board holds RST high by itself. The PN532's **SCK** pin is the SPI
+clock, not the I2C clock: in I2C mode, use **SCL**.
 
 In the Arduino IDE, pick **ESP32 Dev Module** for a WROOM board or
 **ESP32C3 Dev Module** for a C3. A C3 board with a CP2102N USB chip needs the
