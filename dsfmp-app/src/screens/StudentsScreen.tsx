@@ -12,6 +12,7 @@ type Beneficiary = {
   beneficiary_id: string;
   full_name: string;
   age: number | null;
+  sex?: 'female' | 'male' | null; // fix 018
   admission_no: string;
   nfc_tag_id: string | null;
   status: 'active' | 'inactive';
@@ -20,6 +21,7 @@ type Beneficiary = {
 type FormState = {
   full_name: string;
   age: string;
+  sex: '' | 'female' | 'male';
   admission_no: string;
   nfc_tag_id: string;
   status: 'active' | 'inactive';
@@ -28,6 +30,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   full_name: '',
   age: '',
+  sex: '',
   admission_no: '',
   nfc_tag_id: '',
   status: 'active',
@@ -55,7 +58,8 @@ export default function StudentsScreen({ navigation }: any) {
     setLoading(true);
     const { data, error } = await supabase
       .from('beneficiaries')
-      .select('beneficiary_id, full_name, age, admission_no, nfc_tag_id, status')
+      // '*' so the list still loads before fix 018 adds sex.
+      .select('*')
       .eq('school_id', school.school_id)
       .order('full_name');
     if (error) {
@@ -78,6 +82,7 @@ export default function StudentsScreen({ navigation }: any) {
         : {
             full_name: target.full_name,
             age: target.age?.toString() ?? '',
+            sex: target.sex ?? '',
             admission_no: target.admission_no,
             nfc_tag_id: target.nfc_tag_id ?? '',
             status: target.status,
@@ -105,6 +110,7 @@ export default function StudentsScreen({ navigation }: any) {
     const payload = {
       full_name: fullName,
       age,
+      sex: form.sex || null,
       admission_no: admissionNo,
       nfc_tag_id: form.nfc_tag_id.trim() || null,
       status: form.status,
@@ -174,6 +180,19 @@ export default function StudentsScreen({ navigation }: any) {
           keyboardType="number-pad"
           placeholder="Optional"
         />
+        <Text variant="labelLarge" style={styles.label}>Sex</Text>
+        <SegmentedButtons
+          value={form.sex}
+          onValueChange={(sex) => setForm({ ...form, sex: sex as FormState['sex'] })}
+          buttons={[
+            { value: 'female', label: 'Female', icon: 'gender-female' },
+            { value: 'male', label: 'Male', icon: 'gender-male' },
+          ]}
+        />
+        <Text variant="bodySmall" style={styles.fieldHint}>
+          Age and sex set the student's daily nutrient needs (FAO/WHO). From age 10, boys' and
+          girls' needs differ, so the feeding report needs both.
+        </Text>
         <Field
           label="NFC tag ID"
           value={form.nfc_tag_id}
@@ -326,6 +345,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   content: { padding: 20 },
   viewOnly: { color: c.textMuted, marginBottom: 12 },
   label: { color: c.textSecondary, marginTop: 16, marginBottom: 8 },
+  fieldHint: { color: c.textMuted, marginTop: 6 },
   buttonContent: { paddingVertical: 6 },
   saveButton: { marginTop: 8, marginBottom: 40 },
   search: { backgroundColor: c.surface },

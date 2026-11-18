@@ -78,8 +78,10 @@ async function fetchAllRows<T>(
 
 export default function ReportsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school } = useSchool();
+  const { school, can } = useSchool();
   const schoolIds = [school.school_id];
+  // Bumped on pull-to-refresh so the micronutrient section reloads too.
+  const [refreshKey, setRefreshKey] = useState(0);
   const schoolKey = school.school_id;
   const [range, setRange] = useState<RangeKey>('week');
   const [loading, setLoading] = useState(true);
@@ -99,6 +101,7 @@ export default function ReportsScreen({ navigation }: any) {
   const loadReport = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setRefreshKey((k) => k + 1);
     const dates = datesBack(rangeDays);
     const start = dates[dates.length - 1];
     const end = dates[0];
@@ -274,6 +277,8 @@ export default function ReportsScreen({ navigation }: any) {
         </Card>
       )}
 
+      {can('view_nutrition') && <MicronutrientSection rangeDays={rangeDays} refreshKey={refreshKey} />}
+
       {/* ---------------- Food used ---------------- */}
       <Text variant="titleMedium" style={styles.sectionTitle}>Food used</Text>
       {used.length === 0 ? (
@@ -345,8 +350,136 @@ export default function ReportsScreen({ navigation }: any) {
   );
 }
 
+// ---------------- Micronutrients (fix 018) ----------------
+// For each micronutrient: how many students' school meals give them less
+// than a target share of their FAO/WHO daily need, and the median share.
+
+const MICRONUTRIENTS = [
+  { key: 'iron_mg', label: 'Iron' },
+  { key: 'zinc_mg', label: 'Zinc' },
+  { key: 'vitamin_a_re_ug', label: 'Vitamin A' },
+  { key: 'folate_ug', label: 'Folate' },
+  { key: 'vitamin_b12_ug', label: 'Vitamin B12' },
+  { key: 'calcium_mg', label: 'Calcium' },
+  { key: 'magnesium_mg', label: 'Magnesium' },
+  { key: 'thiamin_mg', label: 'Thiamin (B1)' },
+  { key: 'riboflavin_mg', label: 'Riboflavin (B2)' },
+  { key: 'niacin_mg', label: 'Niacin (B3)' },
+  { key: 'vitamin_c_mg', label: 'Vitamin C' },
+] as const;
+
+// One school meal a day is usually planned to cover about 30% of daily
+// needs; 50% for two meals; all three meals of a boarding school, 100%.
+const TARGETS = [
+  { value: '30', label: '30% (1 meal)' },
+  { value: '50', label: '50%' },
+  { value: '100', label: '100% (boarding)' },
+];
+
+type Adequacy = {
+  nutrient: string;
+  students: number;
+  below_target: number;
+  median_percent: number | null;
+  not_assessed: number;
+};
+
+function MicronutrientSection({ rangeDays, refreshKey }: { rangeDays: number; refreshKey: number }) {
+  const { colors, styles } = useThemedStyles(makeStyles);
+  const { school } = useSchool();
+  const [target, setTarget] = useState('30');
+  const [rows, setRows] = useState<Map<string, Adequacy>>(new Map());
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const dates = datesBack(rangeDays);
+      const { data, error } = await supabase.rpc('school_nutrient_adequacy', {
+        p_school_id: school.school_id,
+        p_from: dates[dates.length - 1],
+        p_to: dates[0],
+        p_target: Number(target),
+      });
+      if (cancelled) return;
+      if (error) {
+        setError(
+          error.code === 'PGRST202'
+            ? 'Run supabase/fixes/018_nutrient_needs.sql to see how meals meet students\' needs.'
+            : error.message
+        );
+        setRows(new Map());
+      } else {
+        setError(null);
+        setRows(new Map(((data ?? []) as Adequacy[]).map((r) => [r.nutrient, r])));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [school.school_id, rangeDays, target, refreshKey]);
+
+  const assessed = Math.max(0, ...[...rows.values()].map((r) => r.students));
+  const notAssessed = Math.max(0, ...[...rows.values()].map((r) => r.not_assessed));
+
+  return (
+    <>
+      <Text variant="titleMedium" style={styles.sectionTitle}>Micronutrients: students' needs met</Text>
+      <SegmentedButtons value={target} onValueChange={setTarget} buttons={TARGETS} />
+      {error ? (
+        <Text variant="bodyMedium" style={[styles.empty, styles.microGap]}>{error}</Text>
+      ) : assessed === 0 ? (
+        <Text variant="bodyMedium" style={[styles.empty, styles.microGap]}>
+          No meals to assess yet in this period. Students need an age (and a sex from age 10), and
+          the dish on the Timetable needs servings.
+        </Text>
+      ) : (
+        <Card mode="outlined" style={styles.card}>
+          <Card.Content>
+            {MICRONUTRIENTS.map((n) => {
+              const r = rows.get(n.key);
+              if (!r || r.students === 0) return null;
+              const median = Number(r.median_percent ?? 0);
+              const short = median < Number(target);
+              return (
+                <View key={n.key} style={styles.barRow}>
+                  <Text variant="labelSmall" style={styles.barLabel}>{n.label}</Text>
+                  <View style={styles.barTrack}>
+                    <View
+                      style={{
+                        width: `${Math.min(100, median)}%`,
+                        backgroundColor: short ? colors.danger : colors.primary,
+                      }}
+                    />
+                  </View>
+                  <Text variant="labelSmall" style={[styles.microValue, short && { color: colors.danger }]}>
+                    {median}% · {r.below_target}/{r.students}
+                  </Text>
+                </View>
+              );
+            })}
+          </Card.Content>
+        </Card>
+      )}
+      {!error && assessed > 0 && (
+        <Text variant="bodySmall" style={styles.note}>
+          Bar = the median student's share of their daily need from school meals (red if below
+          {' '}{target}%); then how many of the {assessed} students assessed are below {target}%.
+          Needs are the FAO/WHO (2004) recommended intakes for each student's age and sex; iron and
+          zinc needs allow for the phytate in the meals. Food values: Kenya Food Composition Tables 2018.
+          {notAssessed > 0
+            ? ` ${notAssessed} students who ate weren't assessed: add their age, and sex from age 10.`
+            : ''}
+        </Text>
+      )}
+    </>
+  );
+}
+
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background },
+  microGap: { marginTop: 10 },
+  microValue: { width: 86, textAlign: 'right', color: c.textSecondary },
   content: { padding: 20 },
   sectionTitle: { fontWeight: '700', marginTop: 28, marginBottom: 10, color: c.text },
   tiles: { flexDirection: 'row', gap: 8 },

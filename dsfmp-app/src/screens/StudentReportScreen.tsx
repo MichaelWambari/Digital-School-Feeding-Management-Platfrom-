@@ -56,6 +56,30 @@ const NUTRIENTS: Nutrient[] = [
   { key: 'fibre_g', label: 'Fibre', unit: 'g', digits: 1, micro: false },
 ];
 
+// One row of student_nutrient_adequacy (fix 018): the student's average
+// per day of meals against their FAO/WHO daily need.
+type Need = {
+  nutrient: string;
+  per_day: number | null;
+  requirement: number | null;
+  unit: string | null;
+  percent: number | null;
+  variant: string | null;
+  days: number;
+  phytate_zinc: number | null;
+  missing: 'age' | 'sex' | 'age_range' | null;
+};
+// Below this share of the daily need a value is shown in red: roughly what
+// one school meal a day should cover (WFP models school meals at 30-50%).
+const LOW_PERCENT = 30;
+// Vitamin A needs are in retinol equivalents, so that row uses the RE total.
+const needKey = (key: NutrientKey) => (key === 'vitamin_a_ug' ? 'vitamin_a_re_ug' : key);
+const MISSING_TEXT: Record<string, string> = {
+  age: "Add the student's age to compare with their daily needs.",
+  sex: "Add the student's sex: from age 10, boys' and girls' daily needs differ.",
+  age_range: 'Daily needs are only set for ages 4 to 18.',
+};
+
 // Phytate:zinc molar ratio (phytate 660 g/mol, zinc 65.4 g/mol). Above 15
 // means low zinc absorption, 5-15 moderate, below 5 good (WHO/FAO, 2004).
 function phytateZinc(phytateMg: number, zincMg: number) {
@@ -101,6 +125,7 @@ export default function StudentReportScreen({ navigation, route }: any) {
   const [range, setRange] = useState('30');
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [records, setRecords] = useState<Map<string, Record_>>(new Map());
+  const [needs, setNeeds] = useState<Map<string, Need>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,7 +135,7 @@ export default function StudentReportScreen({ navigation, route }: any) {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [attendanceResult, nutritionResult] = await Promise.all([
+    const [attendanceResult, nutritionResult, needsResult] = await Promise.all([
       supabase
         .from('meal_attendance')
         .select('attendance_id, attendance_date, meal_type')
@@ -125,7 +150,17 @@ export default function StudentReportScreen({ navigation, route }: any) {
             .eq('beneficiary_id', beneficiaryId)
             .gte('attendance_date', start)
         : Promise.resolve({ data: [], error: null }),
+      // % of daily needs met (fix 018); the report works without it.
+      seesNutrition
+        ? supabase.rpc('student_nutrient_adequacy', {
+            p_beneficiary_id: beneficiaryId,
+            p_from: start,
+            p_to: localDate(0),
+          })
+        : Promise.resolve({ data: [], error: null }),
     ]);
+    const needRows = needsResult.error ? [] : ((needsResult.data ?? []) as Need[]);
+    setNeeds(new Map(needRows.map((r) => [r.nutrient, r])));
     if (attendanceResult.error) {
       setError(`Could not load the report: ${attendanceResult.error.message}`);
     } else {
@@ -167,6 +202,13 @@ export default function StudentReportScreen({ navigation, route }: any) {
     const absorption = phytateZinc(phytate, totals.zinc_mg);
     return { byMeal, totals, energyByDay, estimated, incomplete, older, absorption, daysFed, daysEstimated };
   }, [attendance, records]);
+
+  // % of daily needs: only from meals recorded since fix 018.
+  const needList = [...needs.values()];
+  const hasNeeds = needList.some((r) => r.days > 0);
+  const needMissing = needList.find((r) => r.days > 0 && r.missing)?.missing ?? null;
+  const ironBasis = needs.get('iron_mg')?.variant === 'iron_5' ? '5%' : '10%';
+  const zincBasis = needs.get('zinc_mg')?.variant?.replace('zinc_', '') ?? 'moderate';
 
   // The last 14 days of the range, oldest first, for the energy chart.
   const chartDays = Array.from({ length: Math.min(days, 14) }, (_, i) => localDate(Math.min(days, 14) - 1 - i));
@@ -218,19 +260,41 @@ export default function StudentReportScreen({ navigation, route }: any) {
                         {micro ? 'Micronutrients' : 'Energy and macronutrients'}
                       </Text>
                       <Text variant="labelMedium" style={styles.cellValue}>Per day</Text>
-                      <Text variant="labelMedium" style={styles.cellValue}>Total</Text>
+                      <Text variant="labelMedium" style={styles.cellValue}>
+                        {micro && hasNeeds ? '% of daily need' : 'Total'}
+                      </Text>
                     </View>
-                    {NUTRIENTS.filter((n) => n.micro === micro).map((n) => (
-                      <View key={n.key} style={styles.tableRow}>
-                        <Text variant="bodyMedium" style={styles.cellName}>{n.label}</Text>
-                        <Text variant="bodyMedium" style={styles.cellValue}>
-                          {fmt(summary.totals[n.key] / Math.max(1, summary.daysEstimated), n.digits)} {n.unit}
-                        </Text>
-                        <Text variant="bodyMedium" style={styles.cellValue}>
-                          {fmt(summary.totals[n.key], n.digits)} {n.unit}
-                        </Text>
-                      </View>
-                    ))}
+                    {NUTRIENTS.filter((n) => n.micro === micro).map((n) => {
+                      const need = micro && hasNeeds ? needs.get(needKey(n.key)) : undefined;
+                      return (
+                        <View key={n.key} style={styles.tableRow}>
+                          <Text variant="bodyMedium" style={styles.cellName}>{n.label}</Text>
+                          <Text variant="bodyMedium" style={styles.cellValue}>
+                            {fmt(summary.totals[n.key] / Math.max(1, summary.daysEstimated), n.digits)} {n.unit}
+                          </Text>
+                          {micro && hasNeeds ? (
+                            <Text
+                              variant="bodyMedium"
+                              style={[
+                                styles.cellValue,
+                                need?.percent != null && need.percent < LOW_PERCENT && styles.low,
+                              ]}
+                            >
+                              {need?.percent != null
+                                ? `${fmt(Number(need.percent), 0)}% of ${fmt(Number(need.requirement), 1)}`
+                                : '—'}
+                            </Text>
+                          ) : (
+                            <Text variant="bodyMedium" style={styles.cellValue}>
+                              {fmt(summary.totals[n.key], n.digits)} {n.unit}
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    })}
+                    {micro && needMissing && (
+                      <Text variant="bodySmall" style={styles.lowNote}>{MISSING_TEXT[needMissing]}</Text>
+                    )}
                   </View>
                 ))}
                 {summary.absorption && (
@@ -245,6 +309,13 @@ export default function StudentReportScreen({ navigation, route }: any) {
                 <Text variant="bodySmall" style={styles.footnote}>
                   Per day = average over the {summary.daysEstimated} days with an estimate. Values are
                   from the Kenya Food Composition Tables 2018.
+                  {hasNeeds
+                    ? ` % of daily need compares the average per day of school meals with the FAO/WHO (2004) ` +
+                      `recommended intake for the student's age and sex (vitamin A in retinol equivalents). ` +
+                      `Iron is judged at ${ironBasis} absorption and zinc at ${zincBasis} absorption, from the ` +
+                      `phytate in these meals. Red is below ${LOW_PERCENT}%. It counts meals recorded since ` +
+                      `needs were added.`
+                    : ''}
                   {summary.absorption
                     ? ' Phytate in whole maize and beans binds zinc and iron: above 15, much of the zinc ' +
                       "isn't absorbed (WHO/FAO). Foods with no phytate value count as none."
@@ -336,6 +407,8 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   tableHead: { flexDirection: 'row', paddingBottom: 6 },
   tableRow: { flexDirection: 'row', paddingVertical: 4 },
   tableGap: { marginTop: 14 },
+  low: { color: c.danger, fontWeight: '600' },
+  lowNote: { color: c.warning, marginTop: 4 },
   absorption: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
   cellName: { flex: 1.3, color: c.text },
   cellValue: { flex: 1, color: c.textSecondary, textAlign: 'right' },

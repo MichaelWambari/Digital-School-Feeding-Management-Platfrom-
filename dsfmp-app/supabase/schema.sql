@@ -54,6 +54,12 @@
   drop function if exists public.list_schools() cascade;
   drop function if exists public.set_school_status(uuid, text) cascade;
 
+  -- added by fix 018
+  drop table if exists nutrient_requirements cascade;
+  drop function if exists public.nutrient_keys() cascade;
+  drop function if exists public.student_nutrient_adequacy(uuid, date, date) cascade;
+  drop function if exists public.school_nutrient_adequacy(uuid, date, date, numeric) cascade;
+
   -- added by fix 016
   drop table if exists meal_closures cascade;
   drop table if exists meal_issues cascade;
