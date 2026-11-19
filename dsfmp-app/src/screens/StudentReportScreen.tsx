@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, RefreshControl } from 'react-native';
+import { View, StyleSheet, RefreshControl, Pressable } from 'react-native';
 import { Card, Divider, HelperText, List, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
@@ -7,6 +7,7 @@ import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
 import { SegmentedButtons } from '../components/Paper';
 import { ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
+import { NEED_GOOD_AT, NEED_LOW_AT, NutrientDonut } from '../components/NutrientDonut';
 
 type MealType = 'breakfast' | 'lunch' | 'supper';
 type Attendance = { attendance_id: string; attendance_date: string; meal_type: MealType };
@@ -126,6 +127,7 @@ export default function StudentReportScreen({ navigation, route }: any) {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [records, setRecords] = useState<Map<string, Record_>>(new Map());
   const [needs, setNeeds] = useState<Map<string, Need>>(new Map());
+  const [selectedEnergyDate, setSelectedEnergyDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -210,9 +212,21 @@ export default function StudentReportScreen({ navigation, route }: any) {
   const ironBasis = needs.get('iron_mg')?.variant === 'iron_5' ? '5%' : '10%';
   const zincBasis = needs.get('zinc_mg')?.variant?.replace('zinc_', '') ?? 'moderate';
 
-  // The last 14 days of the range, oldest first, for the energy chart.
-  const chartDays = Array.from({ length: Math.min(days, 14) }, (_, i) => localDate(Math.min(days, 14) - 1 - i));
-  const maxEnergy = Math.max(1, ...chartDays.map((d) => summary.energyByDay.get(d) ?? 0));
+  // Energy accumulated over the days eaten, oldest first: each day's energy
+  // and the running total up to and including it.
+  const energyDays = useMemo(() => {
+    let total = 0;
+    return [...summary.energyByDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, day]) => {
+        total += day;
+        return { date, day, total };
+      });
+  }, [summary.energyByDay]);
+  const shownEnergyDays = energyDays.slice(-14);
+  const energyTotal = energyDays.length ? energyDays[energyDays.length - 1].total : 0;
+  const maxCumulative = Math.max(1, energyTotal);
+  const selectedDay = energyDays.find((d) => d.date === selectedEnergyDate) ?? null;
 
   return (
     <FadeInScrollView
@@ -251,6 +265,46 @@ export default function StudentReportScreen({ navigation, route }: any) {
               Timetable has a serving.
             </Text>
           ) : (
+            <>
+            <Text variant="titleSmall" style={styles.sectionTitle}>
+              Micronutrients: daily needs met
+              {hasNeeds ? ` · ${needs.get('iron_mg')?.days ?? 0} days eaten` : ''}
+            </Text>
+            {hasNeeds && !needMissing ? (
+              <>
+                <View style={styles.donuts}>
+                  {NUTRIENTS.filter((n) => n.micro).map((n) => {
+                    const need = needs.get(needKey(n.key));
+                    const percent = need?.percent != null ? Number(need.percent) : null;
+                    return (
+                      <NutrientDonut
+                        key={n.key}
+                        style={styles.donut}
+                        label={n.label.replace(/ \(B\d\)$/, '')}
+                        percent={percent}
+                        detail={
+                          need?.per_day != null && need.requirement != null
+                            ? `${fmt(Number(need.per_day), n.digits)} of ${fmt(Number(need.requirement), 1)} ${n.key === 'vitamin_a_ug' ? 'µg RE' : n.unit}`
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
+                </View>
+                <Text variant="bodySmall" style={styles.meta}>
+                  Each ring is the average per day eaten as a share of {name.split(' ')[0]}'s daily need
+                  (FAO/WHO), full at 100%: green {NEED_GOOD_AT}% or more, yellow {NEED_LOW_AT}–{NEED_GOOD_AT - 1}%,
+                  red under {NEED_LOW_AT}%.
+                </Text>
+              </>
+            ) : (
+              <Text variant="bodyMedium" style={styles.empty}>
+                {needMissing
+                  ? MISSING_TEXT[needMissing]
+                  : 'Shown for meals recorded since daily needs were added, once the dish on the Timetable has a serving.'}
+              </Text>
+            )}
+            <Text variant="titleSmall" style={styles.sectionTitle}>Details</Text>
             <Card mode="contained" style={styles.card}>
               <Card.Content>
                 {[true, false].map((micro) => (
@@ -332,26 +386,68 @@ export default function StudentReportScreen({ navigation, route }: any) {
                 </Text>
               </Card.Content>
             </Card>
+            </>
           )}
 
-          {summary.estimated > 0 && (
+          {energyDays.length > 0 && (
             <>
-              <Text variant="titleSmall" style={styles.sectionTitle}>Energy per day (kcal)</Text>
+              <Text variant="titleSmall" style={styles.sectionTitle}>Energy accumulated (kcal)</Text>
+              <Text variant="bodySmall" style={styles.meta}>
+                {selectedDay
+                  ? `${formatDay(selectedDay.date)}: ${fmt(selectedDay.day, 0)} kcal that day · ` +
+                    `${fmt(selectedDay.total, 0)} kcal in total so far`
+                  : `${fmt(energyTotal, 0)} kcal over ${energyDays.length} days eaten. Tap a bar for that day.`}
+              </Text>
               <View style={styles.chart}>
-                {chartDays.map((d) => {
-                  const e = summary.energyByDay.get(d) ?? 0;
+                {shownEnergyDays.map((d) => {
+                  const selected = selectedDay?.date === d.date;
                   return (
-                    <View key={d} style={styles.chartCol}>
+                    <Pressable
+                      key={d.date}
+                      style={styles.chartCol}
+                      onPress={() => setSelectedEnergyDate(selected ? null : d.date)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${formatDay(d.date)}: ${Math.round(d.day)} kcal, ${Math.round(d.total)} kcal in total`}
+                      hitSlop={4}
+                    >
                       <View style={styles.chartBarArea}>
+                        {/* that day's energy on top of what had built up before */}
                         <View
-                          style={[styles.chartBar, { height: `${(e / maxEnergy) * 100}%` }, e === 0 && styles.chartBarEmpty]}
+                          style={[
+                            styles.chartBar,
+                            styles.chartBarToday,
+                            { height: `${(d.day / maxCumulative) * 100}%` },
+                            selected && styles.chartBarSelected,
+                          ]}
                         />
+                        {d.total - d.day > 0 && (
+                          <View
+                            style={[
+                              styles.chartBar,
+                              styles.chartBarBefore,
+                              { height: `${((d.total - d.day) / maxCumulative) * 100}%` },
+                            ]}
+                          />
+                        )}
                       </View>
-                      <Text variant="labelSmall" style={styles.chartLabel}>{Number(d.slice(8))}</Text>
-                    </View>
+                      <Text variant="labelSmall" style={[styles.chartLabel, selected && styles.chartLabelSelected]}>
+                        {Number(d.date.slice(8))}
+                      </Text>
+                    </Pressable>
                   );
                 })}
               </View>
+              <View style={styles.legend}>
+                <View style={[styles.legendSwatch, styles.chartBarToday]} />
+                <Text variant="labelSmall" style={styles.legendText}>That day</Text>
+                <View style={[styles.legendSwatch, styles.chartBarBefore]} />
+                <Text variant="labelSmall" style={styles.legendText}>Earlier days</Text>
+              </View>
+              {energyDays.length > shownEnergyDays.length && (
+                <Text variant="bodySmall" style={styles.meta}>
+                  Showing the last {shownEnergyDays.length} days eaten; totals count from the start of the period.
+                </Text>
+              )}
             </>
           )}
         </>
@@ -417,8 +513,17 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   chart: { flexDirection: 'row', alignItems: 'flex-end', height: 120, gap: 4 },
   chartCol: { flex: 1, alignItems: 'center', height: '100%' },
   chartBarArea: { flex: 1, width: '100%', justifyContent: 'flex-end' },
-  chartBar: { width: '100%', backgroundColor: c.primary, borderRadius: 4, minHeight: 2 },
-  chartBarEmpty: { backgroundColor: c.border },
+  chartBar: { width: '100%', borderRadius: 4, minHeight: 2 },
+  // 2px gap between the day's segment and the earlier total below it.
+  chartBarToday: { backgroundColor: c.primary, marginBottom: 2 },
+  chartBarBefore: { backgroundColor: c.primary, opacity: 0.35 },
+  chartBarSelected: { opacity: 0.75 },
+  chartLabelSelected: { color: c.text, fontWeight: '700' },
+  legend: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  legendSwatch: { width: 10, height: 10, borderRadius: 2, marginBottom: 0 },
+  legendText: { color: c.textSecondary, marginRight: 10 },
+  donuts: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 16, marginBottom: 8 },
+  donut: { width: '31%' },
   chartLabel: { color: c.textFaint, marginTop: 4 },
   row: { paddingRight: 0 },
   pill: { alignSelf: 'center' },
