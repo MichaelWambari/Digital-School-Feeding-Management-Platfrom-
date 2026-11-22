@@ -8,30 +8,43 @@ Serial Monitor still counts as a tap.
 
 ## Wiring
 
-Set the PN532's mode switches to **I2C** (switch 1 ON, switch 2 OFF) with the
-power off; they are only read at power-up. The PN532 (address 0x24) and the
-LCD (0x27) share SDA and SCL.
+The default is the full reader (`HAS_DISPLAY = true`) with the PN532 on SPI
+(`PN532_USE_SPI 1`, `PN532_USE_IRQ 1`). Set the PN532's mode switches to
+**SPI** (switch 1 OFF, switch 2 ON) with the power off; they are only read
+at power-up.
 
 The sketch works on a classic ESP32 (WROOM) DevKit or an ESP32-C3 DevKit and
 picks the pins for the board it is compiled for.
 
 | Part | Pin | ESP32 (WROOM) | ESP32-C3 |
 |---|---|---|---|
-| PN532 | SV / 5V | 3V3 | 3V3 |
-| | GND | GND | GND |
-| | MO/SDA/TX | 21 | 4 |
-| | NSS/SCL/RX | 22 | 5 |
-| | IRQ | 4 | 6 |
-| | RST | 15 | 7 |
-| | SCK, MI | not connected | not connected |
-| LCD 1602 (I2C) | VCC / GND | 5V (or 3V3 if the backpack allows) / GND | same |
-| | SDA / SCL | 21 / 22 | 4 / 5 |
-| Green LED / red LED (220 Ω) | | 25 / 26 | 0 / 1 |
-| Buzzer | | 33 | 10 |
+| PN532 | VCC / GND | 5V (VIN) / GND | 5V / GND |
+| | SCK | 18 | 4 |
+| | MISO | 19 | 5 |
+| | MOSI | 23 | 6 |
+| | SS | 5 | 7 |
+| | IRQ | 4 | 3 |
+| | RSTO | not connected | not connected |
+| LCD 1602 (I2C, 0x27) | VCC / GND | 5V / GND | 5V / GND |
+| | SDA / SCL | 21 / 22 | 8 / 9 |
+| Green LED (+ 220 Ω to GND) | | 25 | 0 |
+| Red LED (+ 220 Ω to GND) | | 26 | 1 |
+| Buzzer (+ to pin, − to GND) | | 33 | 10 |
+
+On the C3 the LCD uses GPIO 8 and 9, which are boot pins; the LCD backpack's
+pull-up resistors hold them high, which is what the C3 needs to boot. GPIO 8
+also drives the C3's on-board RGB LED, which may flicker while the LCD
+updates. At startup the Serial Monitor prints `LCD found at 0x27`; if not,
+it lists the I2C addresses that did answer. A backpack at 0x3F needs
+`LCD_ADDRESS` changed.
+
+With the PN532 in I2C mode instead (`PN532_USE_SPI 0`, switch 1 ON, switch 2
+OFF), it shares SDA and SCL with the LCD (21 / 22 on a WROOM, 4 / 5 on a C3),
+with IRQ on 4 / 6.
 
 ### PN532 only (no LCD, LEDs or buzzer)
 
-Set `HAS_DISPLAY = false` in `reader.ino` (the default). Results go to the
+Set `HAS_DISPLAY = false` in `reader.ino`. Results go to the
 Serial Monitor, and the board's own LED flashes: green or red on the C3's
 RGB LED, or one long or three short blinks on a WROOM's blue LED. Power the
 PN532 from **5V**, not 3V3, because its regulator needs the headroom. Its

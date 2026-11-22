@@ -38,7 +38,10 @@ const char *DEVICE_ID = "reader-tumaini-01";
 // true when the LCD, LEDs and buzzer are wired up. With false only the
 // ESP32 and the PN532 are needed: results go to the Serial Monitor and
 // the board's own LED flashes (green/red on the C3's RGB LED).
-const bool HAS_DISPLAY = false;
+const bool HAS_DISPLAY = true;
+
+// The LCD backpack's I2C address: usually 0x27, sometimes 0x3F.
+const uint8_t LCD_ADDRESS = 0x27;
 
 // 0 = PN532 on I2C (switches SET0 H, SET1 L),
 // 1 = PN532 on SPI (switches SET0 L, SET1 H).
@@ -53,8 +56,11 @@ const bool HAS_DISPLAY = false;
 #if CONFIG_IDF_TARGET_ESP32C3
 // ESP32-C3 DevKit. Avoids 2/8/9 (boot pins), 18/19 (USB)
 // and 20/21 (the USB serial port).
-const int I2C_SDA_PIN = 4;
-const int I2C_SCL_PIN = 5;
+// In SPI mode the PN532 takes 4-7, so the LCD's I2C moves to 8/9
+// (both boot pins, but the LCD's pull-ups hold them high as booting
+// needs).
+const int I2C_SDA_PIN = PN532_USE_SPI ? 8 : 4;
+const int I2C_SCL_PIN = PN532_USE_SPI ? 9 : 5;
 // In SPI mode GPIO 6 is MOSI, so IRQ moves to GPIO 3.
 const int PN532_IRQ_PIN = PN532_USE_SPI ? 3 : 6;
 const int PN532_RST_PIN = 7;
@@ -91,7 +97,7 @@ const unsigned long REPEAT_TAP_MS = 3000;
 
 // ------------------------------------------
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(LCD_ADDRESS, 16, 2);
 #if PN532_USE_SPI
 Adafruit_PN532 nfc(PN532_SCK_PIN, PN532_MISO_PIN, PN532_MOSI_PIN, PN532_SS_PIN);
 #else
@@ -128,6 +134,7 @@ void setup() {
   if (HAS_DISPLAY) {
     lcd.init();
     lcd.backlight();
+    checkLcd();
   }
 
   startNfc();
@@ -361,6 +368,27 @@ void boardLedFeedback(bool ok) {
     digitalWrite(BOARD_LED_PIN, LOW);
     delay(150);
   }
+}
+
+// Says on the Serial Monitor whether the LCD answered, and if not,
+// which I2C addresses did, to tell a wiring fault from a wrong address.
+void checkLcd() {
+  Wire.beginTransmission(LCD_ADDRESS);
+  if (Wire.endTransmission() == 0) {
+    Serial.printf("LCD found at 0x%02X.\n", LCD_ADDRESS);
+    return;
+  }
+  Serial.printf("LCD not found at 0x%02X (SDA %d, SCL %d). I2C devices found:",
+                LCD_ADDRESS, I2C_SDA_PIN, I2C_SCL_PIN);
+  bool any = false;
+  for (uint8_t address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf(" 0x%02X", address);
+      any = true;
+    }
+  }
+  Serial.println(any ? "" : " none - check the wiring.");
 }
 
 void showMessage(const String &line1, const String &line2) {
