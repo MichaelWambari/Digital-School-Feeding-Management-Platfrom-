@@ -34,12 +34,36 @@ function todayLocal() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// The meal to open on, from today's timetable: the one being served
+// now, else the one that ended last (to check it), else the day's first.
+// Falls back to lunch if today has no timetable.
+async function currentMeal(schoolId: string): Promise<MealType> {
+  const now = new Date();
+  const isoWeekday = now.getDay() === 0 ? 7 : now.getDay();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const { data } = await supabase
+    .from('meal_schedules')
+    .select('meal_type, start_time, end_time')
+    .eq('school_id', schoolId)
+    .eq('weekday', isoWeekday)
+    .order('start_time');
+  const meals = (data ?? []) as { meal_type: MealType; start_time: string; end_time: string }[];
+  if (meals.length === 0) return 'lunch';
+  const serving = meals.find((m) => m.start_time <= time && time < m.end_time);
+  if (serving) return serving.meal_type;
+  const ended = meals.filter((m) => m.end_time <= time);
+  if (ended.length > 0) return ended[ended.length - 1].meal_type;
+  return meals[0].meal_type;
+}
+
 export default function AttendanceScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
   const { school, can } = useSchool();
   // The database checks the same permission.
   const canManage = can('record_attendance');
-  const [mealType, setMealType] = useState<MealType>('lunch');
+  // null until the current meal is worked out from the timetable.
+  const [mealType, setMealType] = useState<MealType | null>(null);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   // beneficiary_id -> attendance_id for today's selected meal
   const [present, setPresent] = useState<Map<string, string>>(new Map());
@@ -50,7 +74,20 @@ export default function AttendanceScreen({ navigation }: any) {
 
   const date = todayLocal();
 
+  useEffect(() => {
+    let cancelled = false;
+    currentMeal(school.school_id)
+      .catch(() => 'lunch' as MealType)
+      .then((meal) => {
+        if (!cancelled) setMealType(meal);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [school.school_id]);
+
   const loadData = useCallback(async () => {
+    if (!mealType) return;
     setLoading(true);
     const [beneficiaryResult, attendanceResult] = await Promise.all([
       supabase
@@ -83,7 +120,57 @@ export default function AttendanceScreen({ navigation }: any) {
     loadData();
   }, [loadData]);
 
+  // Live updates: a meal recorded by an NFC tap or on another device
+  // shows up without a refresh. Realtime applies the table's row level
+  // security, so only this school's rows arrive.
+  useEffect(() => {
+    if (!mealType) return;
+    const channel = supabase
+      .channel(`attendance-${school.school_id}-${date}-${mealType}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'meal_attendance',
+          filter: `school_id=eq.${school.school_id}`,
+        },
+        (payload) => {
+          const row = payload.new as {
+            attendance_id: string;
+            beneficiary_id: string;
+            attendance_date: string;
+            meal_type: string;
+          };
+          if (row.attendance_date !== date || row.meal_type !== mealType) return;
+          setPresent((prev) => new Map(prev).set(row.beneficiary_id, row.attendance_id));
+        }
+      )
+      // Deletes can't be filtered and only carry the row's id, so match
+      // it against the meals on screen.
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'meal_attendance' },
+        (payload) => {
+          const removedId = (payload.old as { attendance_id?: string }).attendance_id;
+          if (!removedId) return;
+          setPresent((prev) => {
+            const entry = [...prev].find(([, attendanceId]) => attendanceId === removedId);
+            if (!entry) return prev;
+            const next = new Map(prev);
+            next.delete(entry[0]);
+            return next;
+          });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [date, mealType, school.school_id]);
+
   async function markPresent(b: Beneficiary) {
+    if (!mealType) return;
     setBusyId(b.beneficiary_id);
     setError(null);
     try {
@@ -165,7 +252,7 @@ export default function AttendanceScreen({ navigation }: any) {
       <ScreenHeader title="Attendance" onBack={() => navigation.goBack()} />
 
       <SegmentedButtons
-        value={mealType}
+        value={mealType ?? ''}
         onValueChange={(meal) => setMealType(meal as MealType)}
         buttons={MEAL_TYPES.map((meal) => ({
           value: meal,

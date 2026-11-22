@@ -1023,3 +1023,10 @@
   $$;
 
   grant execute on function record_nfc_scan(text, text, text, uuid, numeric) to anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- REALTIME
+  -- The Attendance screen listens for new meals as they are
+  -- recorded. Realtime applies the row level security above.
+  -- ------------------------------------------------------------
+  alter publication supabase_realtime add table public.meal_attendance;
