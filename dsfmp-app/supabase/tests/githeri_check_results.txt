@@ -1,0 +1,35 @@
+Githeri check: the app's calculation vs KFCT 2018 food 15053 (per 100 g cooked githeri)
+
+Fitted raw amounts per 100 g of cooked githeri:
+  Whole maize (01018), g       13.2   (cooking: grain_stewed)
+  Kidney beans (03004), g      27.8   (cooking: pulse_unsoaked_stewed)
+  Sunflower oil (09013), ml    3.3   (cooking: oil_fried)
+  Raw food in 100 g cooked: 41.0 g dry maize and beans (the rest is water)
+
+Fit (these set the amounts, so they only show how well 3 foods explain the dish):
+  Nutrient         KFCT     App      Diff
+  energy_kcal      157      157.77   +0%
+  protein_g        6.7      6.75     +1%
+  fat_g            4.2      4.20     0%
+  carbohydrate_g   19.7     19.66    0%
+  fibre_g          7.2      7.13     -1%
+
+Test (not used in the fit):
+  Nutrient         KFCT     Raw      Diff    Cooked   Diff
+  calcium_mg       39       32.63    -16%    32.63    -16%
+  iron_mg          2.2      2.12     -4%     2.12     -4%
+  magnesium_mg     41       38.54    -6%     38.54    -6%
+  zinc_mg          1.01     1.02     +1%     1.02     +1%
+  thiamin_mg       0.1      0.13     +30%    0.10     +3%
+  riboflavin_mg    0.06     0.06     +5%     0.06     +5%
+  niacin_mg        0.8      0.93     +16%    0.78     -2%
+  folate_ug        52       84.99    +63%    52.87    +2%
+  phytate_mg       178      254.44   +43%    181.71   +2%
+
+Mean absolute difference over the 9 test nutrients: raw 21%, with cooking factors 5%
+Phytate:zinc molar ratio: KFCT 17.5, raw 24.7, with cooking factors 17.6
+
+Limits: KFCT's recipe also has small amounts of onion, tomato and salt (vitamin C 0.5 mg,
+sodium 233 mg per 100 g), which are left out here, and KFCT counts the minerals in the tap
+water used to cook cereals and pulses (KFCT 2018, section 7), which likely explains most of the
+calcium gap. The amounts are fitted, not the recipe book's.

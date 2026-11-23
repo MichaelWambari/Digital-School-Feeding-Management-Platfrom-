@@ -18,10 +18,18 @@ type Schedule = {
   meal_id: string | null;
 };
 type Dish = { meal_id: string; name: string };
-type Food = { food_id: string; item_name: string; unit: string };
-// One food in a dish's per-student serving (grams, or ml for litre foods).
-type Ingredient = { meal_id: string; food_id: string; amount_per_serving: number };
-type ServingRow = { food_id: string; amount: string };
+type Food = { food_id: string; item_name: string; unit: string; default_cooking?: string | null };
+// One food in a dish's per-student serving (grams, or ml for litre foods),
+// and how it is cooked (null = the food's usual way). Fix 020.
+type Ingredient = {
+  meal_id: string;
+  food_id: string;
+  amount_per_serving: number;
+  cooking_method?: string | null;
+};
+type ServingRow = { food_id: string; amount: string; cooking: string | null };
+// A cooking method with KFCT 2018 retention factors (fix 020).
+type CookingMethod = { method: string; label: string; food_group: string; sort: number };
 
 const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'supper'];
 const MEAL_LABELS: Record<MealType, string> = { breakfast: 'Breakfast', lunch: 'Lunch', supper: 'Supper' };
@@ -67,13 +75,14 @@ export default function TimetableScreen({ navigation }: any) {
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [foods, setFoods] = useState<Food[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [methods, setMethods] = useState<CookingMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<MealType | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [scheduleResult, dishResult, foodResult, ingredientResult] = await Promise.all([
+    const [scheduleResult, dishResult, foodResult, ingredientResult, methodResult] = await Promise.all([
       supabase
         .from('meal_schedules')
         .select('schedule_id, weekday, meal_type, start_time, end_time, meal_id')
@@ -84,11 +93,10 @@ export default function TimetableScreen({ navigation }: any) {
         .eq('school_id', school.school_id)
         .eq('status', 'active')
         .order('name'),
-      supabase.from('food_items').select('food_id, item_name, unit').order('item_name'),
-      supabase
-        .from('meal_ingredients')
-        .select('meal_id, food_id, amount_per_serving')
-        .eq('school_id', school.school_id),
+      // select('*'): default_cooking and cooking_method arrive with fix 020.
+      supabase.from('food_items').select('*').order('item_name'),
+      supabase.from('meal_ingredients').select('*').eq('school_id', school.school_id),
+      supabase.from('retention_factors').select('method, label, food_group, sort').order('sort'),
     ]);
     // meal_ingredients arrives with fix 011; the timetable still works without it.
     const loadError = scheduleResult.error ?? dishResult.error ?? foodResult.error;
@@ -104,6 +112,8 @@ export default function TimetableScreen({ navigation }: any) {
       setDishes((dishResult.data ?? []) as Dish[]);
       setFoods((foodResult.data ?? []) as Food[]);
       setIngredients(ingredientResult.error ? [] : ((ingredientResult.data ?? []) as Ingredient[]));
+      // Without fix 020 there are no cooking methods, and the editor hides them.
+      setMethods(methodResult.error ? [] : ((methodResult.data ?? []) as CookingMethod[]));
     }
     setLoading(false);
   }, [school.school_id]);
@@ -135,6 +145,7 @@ export default function TimetableScreen({ navigation }: any) {
         dishes={dishes}
         foods={foods}
         ingredients={ingredients}
+        methods={methods}
         onCancel={() => setEditing(null)}
         onSaved={async () => {
           setEditing(null);
@@ -240,6 +251,7 @@ function EditMealView({
   dishes,
   foods,
   ingredients,
+  methods,
   onCancel,
   onSaved,
 }: {
@@ -250,6 +262,7 @@ function EditMealView({
   dishes: Dish[];
   foods: Food[];
   ingredients: Ingredient[];
+  methods: CookingMethod[];
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -262,10 +275,18 @@ function EditMealView({
   const servingOf = (id: string | null): ServingRow[] =>
     ingredients
       .filter((i) => i.meal_id === id)
-      .map((i) => ({ food_id: i.food_id, amount: String(Number(i.amount_per_serving)) }));
+      .map((i) => ({
+        food_id: i.food_id,
+        amount: String(Number(i.amount_per_serving)),
+        cooking: i.cooking_method ?? null,
+      }));
   const [serving, setServing] = useState<ServingRow[]>(() => servingOf(current?.meal_id ?? null));
   const [servingChanged, setServingChanged] = useState(false);
   const [foodSearch, setFoodSearch] = useState('');
+  // The food whose cooking choices are open, and whether to list every method.
+  const [cookingOpen, setCookingOpen] = useState<string | null>(null);
+  const [allMethods, setAllMethods] = useState(false);
+  const methodOf = (key: string | null | undefined) => methods.find((m) => m.method === key);
 
   function chooseDish(id: string | null) {
     setDishId(id);
@@ -334,7 +355,11 @@ function EditMealView({
       if (mealId && (servingChanged || typed)) {
         const { error } = await supabase.rpc('set_meal_ingredients', {
           p_meal_id: mealId,
-          p_items: serving.map((r) => ({ food_id: r.food_id, amount: Number(r.amount.trim()) })),
+          p_items: serving.map((r) => ({
+            food_id: r.food_id,
+            amount: Number(r.amount.trim()),
+            ...(r.cooking ? { cooking: r.cooking } : {}),
+          })),
         });
         if (error) {
           setError(
@@ -454,14 +479,28 @@ function EditMealView({
           <Text variant="bodySmall" style={styles.hint}>
             The food one student gets. Food used at the meal is worked out as students who
             attended × this serving. It applies wherever this dish is served.
+            {methods.length > 0
+              ? ' How each food is cooked sets how much of its vitamins and minerals are lost (Kenya Food Composition Tables 2018).'
+              : ''}
           </Text>
           {serving.length === 0 && (
             <Text variant="bodyMedium" style={styles.emptyServing}>No food added yet.</Text>
           )}
           {serving.map((row, index) => {
             const food = foods.find((f) => f.food_id === row.food_id);
+            const usual = methodOf(food?.default_cooking ?? 'none');
+            const chosen = methodOf(row.cooking) ?? usual;
+            const open = cookingOpen === row.food_id;
+            const choices = methods.filter(
+              (m) => allMethods || m.method === 'none' || m.food_group === usual?.food_group
+            );
+            const setCooking = (cooking: string | null) => {
+              editServing(serving.map((r, i) => (i === index ? { ...r, cooking } : r)));
+              setCookingOpen(null);
+            };
             return (
-              <View key={row.food_id} style={styles.servingRow}>
+              <View key={row.food_id}>
+              <View style={styles.servingRow}>
                 <Text variant="bodyLarge" style={styles.servingFood} numberOfLines={1}>
                   {food?.item_name ?? 'Food'}
                 </Text>
@@ -480,6 +519,43 @@ function EditMealView({
                   accessibilityLabel={`Remove ${food?.item_name ?? 'food'}`}
                   onPress={() => editServing(serving.filter((_, i) => i !== index))}
                 />
+              </View>
+              {methods.length > 0 && (
+                <View style={styles.cookingBlock}>
+                  <Chip
+                    compact
+                    mode="outlined"
+                    icon="pot-steam-outline"
+                    style={styles.cookingChip}
+                    onPress={() => {
+                      setCookingOpen(open ? null : row.food_id);
+                      setAllMethods(false);
+                    }}
+                  >
+                    {`Cooked: ${chosen?.label ?? 'not cooked'}${row.cooking ? '' : ' (usual)'}`}
+                  </Chip>
+                  {open && (
+                    <View style={styles.chipWrap}>
+                      {choices.map((m) => (
+                        <Chip
+                          key={m.method}
+                          compact
+                          mode={chosen?.method === m.method ? 'flat' : 'outlined'}
+                          selected={chosen?.method === m.method}
+                          onPress={() => setCooking(m.method === usual?.method ? null : m.method)}
+                        >
+                          {m.label + (m.method === usual?.method ? ' (usual)' : '')}
+                        </Chip>
+                      ))}
+                      {!allMethods && (
+                        <Button mode="text" compact onPress={() => setAllMethods(true)}>
+                          Other ways
+                        </Button>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
               </View>
             );
           })}
@@ -500,7 +576,7 @@ function EditMealView({
                   mode="outlined"
                   icon="plus"
                   onPress={() => {
-                    editServing([...serving, { food_id: f.food_id, amount: '' }]);
+                    editServing([...serving, { food_id: f.food_id, amount: '', cooking: null }]);
                     setFoodSearch('');
                   }}
                 >
@@ -592,5 +668,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   servingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   servingFood: { flex: 1, color: c.text, marginTop: 8 },
   servingAmount: { width: 96 },
+  cookingBlock: { marginBottom: 6 },
+  cookingChip: { alignSelf: 'flex-start' },
   bottomSpacer: { height: 40 },
 });

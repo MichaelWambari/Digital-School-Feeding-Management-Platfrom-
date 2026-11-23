@@ -32,6 +32,7 @@ create function storage.foldername(name text) returns text[] language sql immuta
   $$ select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] $$;
 grant usage on schema storage to anon, authenticated;
 grant select, insert, update, delete on storage.objects to authenticated;
+create publication supabase_realtime;
 `;
 
 export async function freshDb(upTo = 13) {

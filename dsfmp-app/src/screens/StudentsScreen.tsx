@@ -13,6 +13,7 @@ type Beneficiary = {
   full_name: string;
   age: number | null;
   sex?: 'female' | 'male' | null; // fix 018
+  date_of_birth?: string | null; // fix 020, YYYY-MM-DD
   admission_no: string;
   nfc_tag_id: string | null;
   status: 'active' | 'inactive';
@@ -20,6 +21,7 @@ type Beneficiary = {
 
 type FormState = {
   full_name: string;
+  date_of_birth: string;
   age: string;
   sex: '' | 'female' | 'male';
   admission_no: string;
@@ -29,12 +31,28 @@ type FormState = {
 
 const EMPTY_FORM: FormState = {
   full_name: '',
+  date_of_birth: '',
   age: '',
   sex: '',
   admission_no: '',
   nfc_tag_id: '',
   status: 'active',
 };
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Whole years from a YYYY-MM-DD date of birth to today, or null if the
+// text isn't a real date.
+export function ageFromBirth(dob: string): number | null {
+  if (!DATE_PATTERN.test(dob)) return null;
+  const [y, m, d] = dob.split('-').map(Number);
+  const born = new Date(y, m - 1, d);
+  if (born.getFullYear() !== y || born.getMonth() !== m - 1 || born.getDate() !== d) return null;
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() < m - 1 || (now.getMonth() === m - 1 && now.getDate() < d)) age--;
+  return age;
+}
 
 export default function StudentsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
@@ -81,6 +99,7 @@ export default function StudentsScreen({ navigation }: any) {
         ? EMPTY_FORM
         : {
             full_name: target.full_name,
+            date_of_birth: target.date_of_birth ?? '',
             age: target.age?.toString() ?? '',
             sex: target.sex ?? '',
             admission_no: target.admission_no,
@@ -101,14 +120,28 @@ export default function StudentsScreen({ navigation }: any) {
       setFormError('Full name and admission number are required.');
       return;
     }
-    const age = ageText ? Number(ageText) : null;
+    const dob = form.date_of_birth.trim();
+    const dobAge = dob ? ageFromBirth(dob) : null;
+    if (dob && dobAge === null) {
+      setFormError('Enter the date of birth as YYYY-MM-DD, e.g. 2014-03-21.');
+      return;
+    }
+    if (dobAge !== null && (dobAge < 0 || dobAge > 30)) {
+      setFormError(dobAge < 0 ? "The date of birth can't be in the future." : 'Check the date of birth.');
+      return;
+    }
+    const age = dobAge ?? (ageText ? Number(ageText) : null);
     if (age !== null && (!Number.isInteger(age) || age < 0 || age > 120)) {
       setFormError('Age must be a whole number.');
       return;
     }
+    // Sent only when there is one, or there was one, so saving still
+    // works before fix 020 adds the column.
+    const hadDob = editing !== 'new' && !!editing && 'date_of_birth' in editing;
 
     const payload = {
       full_name: fullName,
+      ...(dob || hadDob ? { date_of_birth: dob || null } : {}),
       age,
       sex: form.sex || null,
       admission_no: admissionNo,
@@ -174,12 +207,28 @@ export default function StudentsScreen({ navigation }: any) {
           placeholder="e.g. ADM-1024"
         />
         <Field
-          label="Age"
-          value={form.age}
-          onChangeText={(age) => setForm({ ...form, age })}
-          keyboardType="number-pad"
-          placeholder="Optional"
+          label="Date of birth"
+          value={form.date_of_birth}
+          onChangeText={(date_of_birth) => setForm({ ...form, date_of_birth })}
+          keyboardType="numbers-and-punctuation"
+          placeholder="YYYY-MM-DD, optional"
+          maxLength={10}
         />
+        {form.date_of_birth.trim() ? (
+          <Text variant="bodySmall" style={styles.fieldHint}>
+            {ageFromBirth(form.date_of_birth.trim()) !== null
+              ? `Age ${ageFromBirth(form.date_of_birth.trim())}, worked out from the date of birth.`
+              : 'Use YYYY-MM-DD, e.g. 2014-03-21.'}
+          </Text>
+        ) : (
+          <Field
+            label="Age"
+            value={form.age}
+            onChangeText={(age) => setForm({ ...form, age })}
+            keyboardType="number-pad"
+            placeholder="If the date of birth isn't known"
+          />
+        )}
         <Text variant="labelLarge" style={styles.label}>Sex</Text>
         <SegmentedButtons
           value={form.sex}
@@ -191,7 +240,8 @@ export default function StudentsScreen({ navigation }: any) {
         />
         <Text variant="bodySmall" style={styles.fieldHint}>
           Age and sex set the student's daily nutrient needs (FAO/WHO). From age 10, boys' and
-          girls' needs differ, so the feeding report needs both.
+          girls' needs differ, so the feeding report needs both. With a date of birth the age
+          stays right as the student grows older.
         </Text>
         <Field
           label="NFC tag ID"
@@ -290,7 +340,9 @@ export default function StudentsScreen({ navigation }: any) {
             title={item.full_name}
             description={
               item.admission_no +
-              (item.age !== null ? ` · Age ${item.age}` : '') +
+              ((item.date_of_birth ? ageFromBirth(item.date_of_birth) : item.age) !== null
+                ? ` · Age ${item.date_of_birth ? ageFromBirth(item.date_of_birth) : item.age}`
+                : '') +
               (item.nfc_tag_id ? ' · NFC linked' : '')
             }
             onPress={() =>

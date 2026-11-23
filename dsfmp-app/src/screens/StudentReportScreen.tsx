@@ -33,6 +33,7 @@ type Record_ = {
   attendance_id: string;
   meal_name: string | null;
   complete: boolean;
+  cooked?: boolean; // fix 020: values are after cooking losses
 } & Partial<Record<NutrientKey, number | null>>;
 
 type Nutrient = { key: NutrientKey; label: string; unit: string; digits: number; micro: boolean };
@@ -187,6 +188,8 @@ export default function StudentReportScreen({ navigation, route }: any) {
     // Meals recorded before fix 017 have no folate, B12 etc.
     let older = 0;
     let phytate = 0;
+    // Meals worked out from raw food values (before fix 020, or older records).
+    let raw = 0;
     for (const a of attendance) {
       byMeal[a.meal_type] = (byMeal[a.meal_type] ?? 0) + 1;
       const r = records.get(a.attendance_id);
@@ -194,6 +197,7 @@ export default function StudentReportScreen({ navigation, route }: any) {
         estimated += 1;
         if (!r.complete) incomplete += 1;
         if (r.folate_ug == null) older += 1;
+        if (!r.cooked) raw += 1;
         for (const n of NUTRIENTS) totals[n.key] += Number(r[n.key] ?? 0);
         phytate += Number(r.phytate_mg ?? 0);
         energyByDay.set(a.attendance_date, (energyByDay.get(a.attendance_date) ?? 0) + Number(r.energy_kcal ?? 0));
@@ -202,7 +206,7 @@ export default function StudentReportScreen({ navigation, route }: any) {
     const daysFed = new Set(attendance.map((a) => a.attendance_date)).size;
     const daysEstimated = energyByDay.size;
     const absorption = phytateZinc(phytate, totals.zinc_mg);
-    return { byMeal, totals, energyByDay, estimated, incomplete, older, absorption, daysFed, daysEstimated };
+    return { byMeal, totals, energyByDay, estimated, incomplete, older, raw, absorption, daysFed, daysEstimated };
   }, [attendance, records]);
 
   // % of daily needs: only from meals recorded since fix 018.
@@ -362,7 +366,14 @@ export default function StudentReportScreen({ navigation, route }: any) {
                 )}
                 <Text variant="bodySmall" style={styles.footnote}>
                   Per day = average over the {summary.daysEstimated} days with an estimate. Values are
-                  from the Kenya Food Composition Tables 2018.
+                  from the Kenya Food Composition Tables 2018
+                  {summary.raw < summary.estimated
+                    ? ', after the vitamins, minerals and phytate lost in cooking (KFCT retention factors, ' +
+                      'by how the dish cooks each food).'
+                    : '.'}
+                  {summary.raw > 0 && summary.raw < summary.estimated
+                    ? ` ${summary.raw} older meals use raw values, so they count more vitamins and phytate.`
+                    : ''}
                   {hasNeeds
                     ? ` % of daily need compares the average per day of school meals with the FAO/WHO (2004) ` +
                       `recommended intake for the student's age and sex (vitamin A in retinol equivalents). ` +
