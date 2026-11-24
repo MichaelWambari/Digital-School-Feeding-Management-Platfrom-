@@ -33,6 +33,7 @@
   drop function if exists public.start_card_link(uuid, text) cascade; -- fix 024
   drop function if exists public.cancel_card_link(uuid) cascade; -- fix 024
   drop table if exists card_link_requests cascade; -- fix 024
+  drop function if exists public.import_students(uuid, jsonb, boolean, boolean) cascade; -- fix 025
   drop function if exists public.apply_inventory_transaction() cascade;
   drop function if exists public.apply_central_transaction() cascade;
   drop function if exists public.log_dispatch_as_central_transaction() cascade;

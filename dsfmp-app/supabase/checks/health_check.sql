@@ -115,6 +115,10 @@ select 9, 'Structure', 'Fix 024: link cards by tapping them',
              and exists (select 1 from fn where proname = 'record_nfc_scan'
                          and prosrc like '%card_linked%') then 'OK' else 'FAIL' end,
        'run supabase/fixes/024 if FAIL'
+union all
+select 9, 'Structure', 'Fix 025: import students from a CSV',
+       case when exists (select 1 from fn where proname = 'import_students') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/025 if FAIL'
 
 -- ---------- SCHOOLS ----------
 union all

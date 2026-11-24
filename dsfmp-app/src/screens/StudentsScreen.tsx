@@ -96,6 +96,9 @@ export default function StudentsScreen({ navigation }: any) {
     loadBeneficiaries();
   }, [loadBeneficiaries]);
 
+  // Reload on returning to this screen, e.g. after an import.
+  useEffect(() => navigation.addListener('focus', loadBeneficiaries), [navigation, loadBeneficiaries]);
+
   const handleCardLinked = useCallback(
     (tag: string) => {
       // Already saved by the database; show it in the form and the list.
@@ -318,9 +321,14 @@ export default function StudentsScreen({ navigation }: any) {
         onBack={() => navigation.goBack()}
         right={
           canManage && (
-            <Button mode="text" icon="plus" onPress={() => openForm('new')}>
-              Add
-            </Button>
+            <View style={styles.headerActions}>
+              <Button mode="text" icon="file-upload-outline" onPress={() => navigation.navigate('ImportStudents')}>
+                Import
+              </Button>
+              <Button mode="text" icon="plus" onPress={() => openForm('new')}>
+                Add
+              </Button>
+            </View>
           )
         }
       />
@@ -428,4 +436,5 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   rowContent: { paddingLeft: 0 },
   pill: { alignSelf: 'center' },
   rowRight: { flexDirection: 'row', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
 });

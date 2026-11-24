@@ -21,6 +21,7 @@ import PermissionsScreen from '../screens/PermissionsScreen';
 import SchoolProfileScreen from '../screens/SchoolProfileScreen';
 import TimetableScreen from '../screens/TimetableScreen';
 import StudentReportScreen from '../screens/StudentReportScreen';
+import ImportStudentsScreen from '../screens/ImportStudentsScreen';
 import FoodValuesScreen from '../screens/FoodValuesScreen';
 import SuppliersScreen from '../screens/SuppliersScreen';
 import SupplierDetailScreen from '../screens/SupplierDetailScreen';
@@ -49,6 +50,7 @@ function accountScreens(kind: AccountKind) {
     <>
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="Students" component={StudentsScreen} />
+      <Stack.Screen name="ImportStudents" component={ImportStudentsScreen} />
       <Stack.Screen name="Attendance" component={AttendanceScreen} />
       <Stack.Screen name="Inventory" component={InventoryScreen} />
       <Stack.Screen name="Distribution" component={DistributionScreen} />
