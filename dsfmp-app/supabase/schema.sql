@@ -35,6 +35,9 @@
   drop table if exists card_link_requests cascade; -- fix 024
   drop function if exists public.import_students(uuid, jsonb, boolean, boolean) cascade; -- fix 025
   drop function if exists public.normalise_beneficiary_upi() cascade; -- fix 026
+  drop function if exists public.recent_unknown_cards(uuid, int) cascade; -- fix 027
+  drop function if exists public.link_unknown_card(uuid, text, uuid) cascade; -- fix 027
+  drop function if exists public.ignore_unknown_card(uuid, text) cascade; -- fix 027
   drop function if exists public.apply_inventory_transaction() cascade;
   drop function if exists public.apply_central_transaction() cascade;
   drop function if exists public.log_dispatch_as_central_transaction() cascade;

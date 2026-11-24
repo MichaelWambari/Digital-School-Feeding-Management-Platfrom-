@@ -6,6 +6,7 @@ import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { Button, SegmentedButtons } from '../components/Paper';
 import { EmptyText, ScreenHeader, StatCard, StatusPill } from '../components/ScreenParts';
+import UnknownCardsPanel from '../components/UnknownCardsPanel';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -250,6 +251,8 @@ export default function AttendanceScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <ScreenHeader title="Attendance" onBack={() => navigation.goBack()} />
+      {/* A card refused as unknown at the reader can be linked here (fix 027). */}
+      {can('manage_students') && <UnknownCardsPanel schoolId={school.school_id} />}
 
       <SegmentedButtons
         value={mealType ?? ''}

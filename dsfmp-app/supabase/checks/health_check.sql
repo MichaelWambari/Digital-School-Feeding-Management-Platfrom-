@@ -126,6 +126,10 @@ select 9, 'Structure', 'Fix 026: students'' NEMIS UPI',
              and exists (select 1 from pg_indexes where schemaname = 'public'
                          and indexname = 'beneficiaries_active_upi_key') then 'OK' else 'FAIL' end,
        'run supabase/fixes/026 if FAIL'
+union all
+select 9, 'Structure', 'Fix 027: link unknown cards from the tap log',
+       case when exists (select 1 from fn where proname = 'link_unknown_card') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/027 if FAIL'
 
 -- ---------- SCHOOLS ----------
 union all

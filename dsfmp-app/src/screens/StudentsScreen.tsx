@@ -8,6 +8,7 @@ import { FadeInScrollView } from '../components/Motion';
 import { Button, IconButton, ListItem, SegmentedButtons } from '../components/Paper';
 import { EmptyText, Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
 import LinkCardPanel from '../components/LinkCardPanel';
+import UnknownCardsPanel from '../components/UnknownCardsPanel';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -358,6 +359,8 @@ export default function StudentsScreen({ navigation }: any) {
           View only. You don't have permission to manage students.
         </Text>
       )}
+
+      {canManage && <UnknownCardsPanel schoolId={school.school_id} onLinked={loadBeneficiaries} />}
 
       <Searchbar
         value={search}
