@@ -119,6 +119,13 @@ union all
 select 9, 'Structure', 'Fix 025: import students from a CSV',
        case when exists (select 1 from fn where proname = 'import_students') then 'OK' else 'FAIL' end,
        'run supabase/fixes/025 if FAIL'
+union all
+select 9, 'Structure', 'Fix 026: students'' NEMIS UPI',
+       case when exists (select 1 from information_schema.columns where table_schema = 'public'
+                         and table_name = 'beneficiaries' and column_name = 'upi')
+             and exists (select 1 from pg_indexes where schemaname = 'public'
+                         and indexname = 'beneficiaries_active_upi_key') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/026 if FAIL'
 
 -- ---------- SCHOOLS ----------
 union all

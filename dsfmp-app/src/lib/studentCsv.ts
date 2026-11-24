@@ -12,6 +12,7 @@ export type ImportRow = {
   sex?: string;
   nfc_tag_id?: string;
   status?: string;
+  upi?: string; // NEMIS Unique Personal Identifier (fix 026)
 };
 
 export type Field = Exclude<keyof ImportRow, 'row'> | 'first_name' | 'middle_name' | 'last_name';
@@ -33,6 +34,7 @@ export const FIELD_LABELS: Record<Field, string> = {
   sex: 'Sex',
   nfc_tag_id: 'Card ID',
   status: 'Status',
+  upi: 'UPI',
 };
 
 // Header names schools use, compared without case, spaces or punctuation.
@@ -48,6 +50,7 @@ const ALIASES: Record<Field, string[]> = {
   sex: ['sex', 'gender'],
   nfc_tag_id: ['nfctagid', 'nfctag', 'nfc', 'cardid', 'card', 'carduid', 'uid', 'tagid', 'cardno', 'cardnumber'],
   status: ['status', 'active'],
+  upi: ['upi', 'upino', 'upinumber', 'nemisupi', 'uniquepersonalidentifier', 'nemisno', 'nemisnumber', 'nemis'],
 };
 
 const normalise = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -190,12 +193,14 @@ export function parseStudentCsv(rawText: string): ParsedFile {
     if (card) row.nfc_tag_id = card.replace(/[\s:]/g, '').toUpperCase();
     const status = get('status');
     if (status) row.status = normaliseStatus(status);
+    const upi = get('upi');
+    if (upi) row.upi = upi.replace(/\s/g, '').toUpperCase();
     return row;
   });
 
   return { rows, columns, problem: null };
 }
 
-export const EXAMPLE_CSV = `Admission no,Name,Date of birth,Sex,Card ID
-JAS-011,Jane Wanjiku,21/03/2014,F,
-JAS-012,Peter Otieno,2013-07-02,M,04A1B2C3`;
+export const EXAMPLE_CSV = `Admission no,Name,Date of birth,Sex,UPI,Card ID
+JAS-011,Jane Wanjiku,21/03/2014,F,A1B2C3D,
+JAS-012,Peter Otieno,2013-07-02,M,,04A1B2C3`;

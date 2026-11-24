@@ -160,8 +160,8 @@ export default function ImportStudentsScreen({ navigation }: any) {
               <Text variant="labelLarge">Columns</Text>
               <Text variant="bodySmall" style={styles.hint}>
                 Needed: Admission no, and Name (or First name and Surname).{'\n'}
-                Optional: Date of birth (DD/MM/YYYY or YYYY-MM-DD), Age, Sex (M/F), Card ID, Status.
-                {'\n'}Other columns, such as Class or UPI, are ignored.
+                Optional: Date of birth (DD/MM/YYYY or YYYY-MM-DD), Age, Sex (M/F), UPI (NEMIS), Card ID,
+                Status.{'\n'}Other columns, such as Class, are ignored.
               </Text>
               <Text style={styles.example}>{EXAMPLE_CSV}</Text>
             </Card.Content>

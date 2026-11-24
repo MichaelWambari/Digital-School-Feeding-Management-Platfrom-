@@ -16,6 +16,7 @@ type Beneficiary = {
   sex?: 'female' | 'male' | null; // fix 018
   date_of_birth?: string | null; // fix 020, YYYY-MM-DD
   admission_no: string;
+  upi?: string | null; // fix 026, NEMIS Unique Personal Identifier
   nfc_tag_id: string | null;
   status: 'active' | 'inactive';
 };
@@ -26,6 +27,7 @@ type FormState = {
   age: string;
   sex: '' | 'female' | 'male';
   admission_no: string;
+  upi: string;
   nfc_tag_id: string;
   status: 'active' | 'inactive';
 };
@@ -36,6 +38,7 @@ const EMPTY_FORM: FormState = {
   age: '',
   sex: '',
   admission_no: '',
+  upi: '',
   nfc_tag_id: '',
   status: 'active',
 };
@@ -119,6 +122,7 @@ export default function StudentsScreen({ navigation }: any) {
             age: target.age?.toString() ?? '',
             sex: target.sex ?? '',
             admission_no: target.admission_no,
+            upi: target.upi ?? '',
             nfc_tag_id: target.nfc_tag_id ?? '',
             status: target.status,
           }
@@ -154,6 +158,12 @@ export default function StudentsScreen({ navigation }: any) {
     // Sent only when there is one, or there was one, so saving still
     // works before fix 020 adds the column.
     const hadDob = editing !== 'new' && !!editing && 'date_of_birth' in editing;
+    const upi = form.upi.replace(/\s/g, '').toUpperCase();
+    if (upi && !/^[A-Z0-9]{3,20}$/.test(upi)) {
+      setFormError('The UPI should be 3-20 letters and digits.');
+      return;
+    }
+    const hadUpi = editing !== 'new' && !!editing && 'upi' in editing;
 
     const payload = {
       full_name: fullName,
@@ -161,6 +171,7 @@ export default function StudentsScreen({ navigation }: any) {
       age,
       sex: form.sex || null,
       admission_no: admissionNo,
+      ...(upi || hadUpi ? { upi: upi || null } : {}),
       nfc_tag_id: form.nfc_tag_id.trim() || null,
       status: form.status,
     };
@@ -221,6 +232,14 @@ export default function StudentsScreen({ navigation }: any) {
           onChangeText={(admission_no) => setForm({ ...form, admission_no })}
           autoCapitalize="characters"
           placeholder="e.g. ADM-1024"
+        />
+        <Field
+          label="UPI (NEMIS)"
+          value={form.upi}
+          onChangeText={(upi) => setForm({ ...form, upi })}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          placeholder="Unique Personal Identifier, optional"
         />
         <Field
           label="Date of birth"
@@ -310,7 +329,8 @@ export default function StudentsScreen({ navigation }: any) {
     ? beneficiaries.filter(
         (b) =>
           b.full_name.toLowerCase().includes(term) ||
-          b.admission_no.toLowerCase().includes(term)
+          b.admission_no.toLowerCase().includes(term) ||
+          (b.upi ?? '').toLowerCase().includes(term)
       )
     : beneficiaries;
 
@@ -342,7 +362,7 @@ export default function StudentsScreen({ navigation }: any) {
       <Searchbar
         value={search}
         onChangeText={setSearch}
-        placeholder="Search by name or admission no."
+        placeholder="Search by name, admission no. or UPI"
         autoCapitalize="none"
         elevation={0}
         style={styles.search}
@@ -412,10 +432,14 @@ export default function StudentsScreen({ navigation }: any) {
 
 function describeError(error: { code?: string; message: string }) {
   if (error.code === '23505') {
-    return error.message.includes('nfc_tag_id')
-      ? 'That NFC tag is already assigned to another student.'
-      : 'That admission number is already registered at this school.';
+    if (error.message.includes('nfc_tag_id')) return 'That NFC tag is already assigned to another student.';
+    if (error.message.includes('beneficiaries_active_upi_key')) {
+      return 'That UPI belongs to an active student, here or at another school. If they have moved here, their old school must mark them as left first.';
+    }
+    if (error.message.includes('beneficiaries_school_upi_key')) return 'That UPI is already on another student at this school.';
+    return 'That admission number is already registered at this school.';
   }
+  if (error.code === '23514' && error.message.includes('upi')) return 'The UPI should be 3-20 letters and digits.';
   if (error.code === '42501') {
     return 'You do not have permission to manage students.';
   }
