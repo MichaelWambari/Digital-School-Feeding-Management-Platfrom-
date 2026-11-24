@@ -32,6 +32,10 @@ const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 // reader-jasiri-01, reader-tumaini-01, reader-upendo-01 and reader-baraka-01.
 const char *DEVICE_ID = "reader-tumaini-01";
 
+// This reader's secret, if it has one (supabase/fixes/022_reader_secrets.sql).
+// Leave it "" for a reader with no secret.
+const char *DEVICE_SECRET = "";
+
 // Demo cards, one per button (card IDs from the demo seed; the last is unknown).
 const int BUTTON_PINS[] = {13, 14, 27};
 const char *BUTTON_CARDS[] = {"A1000001", "A1000002", "FFFFFFFF"};
@@ -109,11 +113,16 @@ void handleTap(const String &card) {
   showMessage("Card read", card);
 
   String firstName, error;
+  bool linked = false;
   unsigned long started = millis();
-  bool ok = recordScan(card, firstName, error);
+  bool ok = recordScan(card, firstName, error, linked);
   unsigned long elapsed = millis() - started;
 
-  if (ok) {
+  if (ok && linked) {
+    Serial.printf("LINKED to %s (%lu ms)\n", firstName.c_str(), elapsed);
+    showMessage("Card linked", firstName);
+    feedback(true);
+  } else if (ok) {
     Serial.printf("OK: %s (%lu ms)\n", firstName.c_str(), elapsed);
     showMessage("Welcome", firstName);
     feedback(true);
@@ -127,7 +136,7 @@ void handleTap(const String &card) {
 
 // Calls record_nfc_scan. Returns true on success and sets firstName;
 // otherwise sets error to the function's error code or an HTTP/network one.
-bool recordScan(const String &card, String &firstName, String &error) {
+bool recordScan(const String &card, String &firstName, String &error, bool &linked) {
   WiFiClientSecure client;
   // Skips certificate checks to keep the demo simple. A deployed reader
   // should pin Supabase's root certificate with client.setCACert().
@@ -143,6 +152,7 @@ bool recordScan(const String &card, String &firstName, String &error) {
   body["p_nfc_tag_id"] = card;
   body["p_device_id"] = DEVICE_ID;
   body["p_mode"] = "attendance";
+  if (DEVICE_SECRET[0] != '\0') body["p_device_secret"] = DEVICE_SECRET;
   String payload;
   serializeJson(body, payload);
 
@@ -167,6 +177,7 @@ bool recordScan(const String &card, String &firstName, String &error) {
   }
   if (result["success"] | false) {
     firstName = result["first_name"] | "";
+    linked = result["linked"] | false;
     return true;
   }
   error = result["error"] | "unknown_error";
@@ -180,6 +191,8 @@ String describeError(const String &error) {
   if (error == "not_eligible") return "Not eligible";
   if (error == "wrong_school") return "Wrong school";
   if (error == "unregistered_or_inactive_device") return "Reader not reg.";
+  if (error == "bad_device_secret") return "Reader secret";
+  if (error == "card_in_use") return "Card in use";
   if (error == "inactive_school") return "School inactive";
   if (error == "network_error") return "No connection";
   return error.substring(0, 16);

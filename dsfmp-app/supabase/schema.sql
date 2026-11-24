@@ -28,6 +28,11 @@
   drop function if exists public.can_view_school(uuid) cascade;
   drop function if exists public.has_school_role(uuid, text[]) cascade;
   drop function if exists public.record_nfc_scan(text, text, text, uuid, numeric) cascade;
+  drop function if exists public.record_nfc_scan(text, text, text, uuid, numeric, text) cascade; -- fix 022
+  drop function if exists public.set_device_secret(text) cascade; -- fix 022
+  drop function if exists public.start_card_link(uuid, text) cascade; -- fix 024
+  drop function if exists public.cancel_card_link(uuid) cascade; -- fix 024
+  drop table if exists card_link_requests cascade; -- fix 024
   drop function if exists public.apply_inventory_transaction() cascade;
   drop function if exists public.apply_central_transaction() cascade;
   drop function if exists public.log_dispatch_as_central_transaction() cascade;

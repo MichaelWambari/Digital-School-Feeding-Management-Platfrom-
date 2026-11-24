@@ -28,6 +28,9 @@ const HELP = `Usage: npm run simulate -- --device <device id> --tag <card id>[,<
 
   --device <id>       Registered reader ID, e.g. reader-tumaini-01 (required)
   --tag <ids>         Card ID(s) to tap, comma separated (required)
+  --secret <secret>   The reader's secret (fix 022), if it has one. Also read
+                      from DSFMP_DEVICE_SECRET. Leave out for a reader with no
+                      secret, or to test that a reader with one refuses taps.
   --mode <mode>       attendance (default). Readers only record attendance;
                       any other mode is refused, which tests that path.
   --repeat <n>        Tap the whole list of cards n times (default 1)
@@ -44,6 +47,7 @@ try {
     options: {
       device: { type: 'string' },
       tag: { type: 'string' },
+      secret: { type: 'string', default: process.env.DSFMP_DEVICE_SECRET },
       mode: { type: 'string', default: 'attendance' },
       repeat: { type: 'string', default: '1' },
       interval: { type: 'string', default: '0' },
@@ -93,6 +97,7 @@ async function scan(tag) {
     p_device_id: args.device,
     p_mode: args.mode,
   };
+  if (args.secret) body.p_device_secret = args.secret;
 
   const started = performance.now();
   let status = 0;
@@ -118,7 +123,7 @@ async function scan(tag) {
   // A 200 carries the function's own { success, error, first_name } result;
   // anything else is an HTTP or network failure before the function ran.
   if (status === 200) {
-    return { tag, ms, success: response.success === true, error: response.error ?? null, name: response.first_name ?? null };
+    return { tag, ms, success: response.success === true, linked: response.linked === true, error: response.error ?? null, name: response.first_name ?? null };
   }
   const error = status === 0 ? 'network_error' : `http_${status}`;
   return { tag, ms, success: false, error, detail: response.message ?? JSON.stringify(response) };
@@ -131,7 +136,7 @@ function report(r, n, total) {
   }
   const counter = `[${String(n).padStart(String(total).length)}/${total}]`;
   const outcome = r.success
-    ? `OK      ${r.name ?? ''} - attendance recorded`
+    ? `OK      ${r.name ?? ''} - ${r.linked ? 'card linked' : 'attendance recorded'}`
     : `FAILED  ${r.error}${r.detail ? ` (${r.detail})` : ''}`;
   console.log(`${counter} ${r.tag.padEnd(10)} ${outcome.padEnd(48)} ${round1(r.ms)} ms`);
 }

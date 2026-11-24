@@ -35,6 +35,13 @@ const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 // reader-jasiri-01, reader-tumaini-01, reader-upendo-01 and reader-baraka-01.
 const char *DEVICE_ID = "reader-tumaini-01";
 
+// This reader's own secret (supabase/fixes/022_reader_secrets.sql).
+// Make it in the SQL Editor with select set_device_secret('<DEVICE_ID>');
+// and paste it here. Leave it "" for a reader that has no secret yet.
+// Once the reader has a secret in the database, taps without it are
+// refused ("Reader secret").
+const char *DEVICE_SECRET = "";
+
 // true when the LCD, LEDs and buzzer are wired up. With false only the
 // ESP32 and the PN532 are needed: results go to the Serial Monitor and
 // the board's own LED flashes (green/red on the C3's RGB LED).
@@ -98,6 +105,18 @@ const unsigned long REPEAT_TAP_MS = 3000;
 // ------------------------------------------
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, 16, 2);
+// The LCD has no "é", so it is drawn as custom character 0.
+const uint8_t E_ACUTE = 0;
+uint8_t E_ACUTE_PATTERN[8] = {
+  0b00010,
+  0b00100,
+  0b01110,
+  0b10001,
+  0b11111,
+  0b10000,
+  0b01110,
+  0b00000,
+};
 #if PN532_USE_SPI
 Adafruit_PN532 nfc(PN532_SCK_PIN, PN532_MISO_PIN, PN532_MOSI_PIN, PN532_SS_PIN);
 #else
@@ -134,6 +153,7 @@ void setup() {
   if (HAS_DISPLAY) {
     lcd.init();
     lcd.backlight();
+    lcd.createChar(E_ACUTE, E_ACUTE_PATTERN);
     checkLcd();
   }
 
@@ -239,13 +259,19 @@ void handleTap(const String &card) {
   showMessage("Card read", card);
 
   String firstName, error;
+  bool linked = false;
   unsigned long started = millis();
-  bool ok = recordScan(card, firstName, error);
+  bool ok = recordScan(card, firstName, error, linked);
   unsigned long elapsed = millis() - started;
 
-  if (ok) {
+  if (ok && linked) {
+    // A coordinator was linking this card to a student (fix 024).
+    Serial.printf("LINKED to %s (%lu ms)\n", firstName.c_str(), elapsed);
+    showMessage("Card linked", firstName);
+    feedback(true);
+  } else if (ok) {
     Serial.printf("OK: %s (%lu ms)\n", firstName.c_str(), elapsed);
-    showMessage("Welcome", firstName);
+    showWelcome(firstName);
     feedback(true);
   } else {
     Serial.printf("FAILED: %s (%lu ms)\n", error.c_str(), elapsed);
@@ -257,9 +283,11 @@ void handleTap(const String &card) {
   lastCardAt = millis();
 }
 
-// Calls record_nfc_scan. Returns true on success and sets firstName;
-// otherwise sets error to the function's error code or an HTTP/network one.
-bool recordScan(const String &card, String &firstName, String &error) {
+// Calls record_nfc_scan. Returns true on success and sets firstName, and
+// linked when the tap linked the card to a student instead of recording
+// a meal; otherwise sets error to the function's error code or an
+// HTTP/network one.
+bool recordScan(const String &card, String &firstName, String &error, bool &linked) {
   WiFiClientSecure client;
   // Skips certificate checks to keep the demo simple. A deployed reader
   // should pin Supabase's root certificate with client.setCACert().
@@ -275,6 +303,7 @@ bool recordScan(const String &card, String &firstName, String &error) {
   body["p_nfc_tag_id"] = card;
   body["p_device_id"] = DEVICE_ID;
   body["p_mode"] = "attendance";
+  if (DEVICE_SECRET[0] != '\0') body["p_device_secret"] = DEVICE_SECRET;
   String payload;
   serializeJson(body, payload);
 
@@ -299,6 +328,7 @@ bool recordScan(const String &card, String &firstName, String &error) {
   }
   if (result["success"] | false) {
     firstName = result["first_name"] | "";
+    linked = result["linked"] | false;
     return true;
   }
   error = result["error"] | "unknown_error";
@@ -312,6 +342,8 @@ String describeError(const String &error) {
   if (error == "not_eligible") return "Not eligible";
   if (error == "wrong_school") return "Wrong school";
   if (error == "unregistered_or_inactive_device") return "Reader not reg.";
+  if (error == "bad_device_secret") return "Reader secret";
+  if (error == "card_in_use") return "Card in use";
   if (error == "inactive_school") return "School inactive";
   if (error == "network_error") return "No connection";
   return error.substring(0, 16);
@@ -338,12 +370,46 @@ void feedback(bool ok) {
 void connectWifi() {
   showMessage("Connecting WiFi", WIFI_SSID);
   Serial.printf("Connecting to %s", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // Small ESP32-C3 boards often can't join Wi-Fi at full transmit power;
+  // 8.5 dBm is plenty for a router or phone in the same room.
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  unsigned long started = millis();
   while (WiFi.status() != WL_CONNECTED) {
     delay(250);
     Serial.print(".");
+    // Every 15 s without a connection, say why and try again.
+    if (millis() - started > 15000) {
+      reportWifiProblem();
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      WiFi.setTxPower(WIFI_POWER_8_5dBm);
+      started = millis();
+    }
   }
   Serial.printf(" connected, IP %s\n", WiFi.localIP().toString().c_str());
+}
+
+// Prints the Wi-Fi status and whether the network can be seen at all,
+// with its signal strength and security, to tell a weak signal or a
+// wrong name from a wrong password or an unsupported security mode.
+void reportWifiProblem() {
+  Serial.printf("\nNot connected yet (status %d). Scanning...\n", WiFi.status());
+  // A scan fails while a connection attempt is running, so stop it first.
+  WiFi.disconnect();
+  delay(100);
+  int found = WiFi.scanNetworks();
+  Serial.printf("  %d networks found\n", found);
+  bool seen = false;
+  for (int i = 0; i < found; i++) {
+    bool match = WiFi.SSID(i) == WIFI_SSID;
+    seen = seen || match;
+    Serial.printf("  %s \"%s\"  %d dBm  security %d  channel %d\n", match ? "*" : " ",
+                  WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.encryptionType(i), WiFi.channel(i));
+  }
+  if (!seen) Serial.println("  The network was not seen: check the name, that it is 2.4 GHz, and the distance.");
+  WiFi.scanDelete();
+  Serial.print("Retrying");
 }
 
 void showIdle() {
@@ -389,6 +455,19 @@ void checkLcd() {
     }
   }
   Serial.println(any ? "" : " none - check the wiring.");
+}
+
+// A recorded meal: "bon appétit," on the top line and the student's
+// first name with a smiley below (names over 13 letters are cut).
+void showWelcome(const String &firstName) {
+  if (!HAS_DISPLAY) return;
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("bon app");
+  lcd.write(E_ACUTE);
+  lcd.print("tit,");
+  lcd.setCursor(0, 1);
+  lcd.print(firstName.substring(0, 13) + " :)");
 }
 
 void showMessage(const String &line1, const String &line2) {

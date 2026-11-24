@@ -104,6 +104,17 @@ union all
 select 9, 'Structure', 'Fix 009: independent schools run by their headteacher',
        case when to_regclass('public.school_role_permissions') is not null then 'OK' else 'FAIL' end,
        'run supabase/fixes/009 if FAIL'
+union all
+select 9, 'Structure', 'Fix 022: readers can have their own secret',
+       case when exists (select 1 from fn where proname = 'record_nfc_scan'
+                         and prosrc like '%bad_device_secret%') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/022 if FAIL'
+union all
+select 9, 'Structure', 'Fix 024: link cards by tapping them',
+       case when to_regclass('public.card_link_requests') is not null
+             and exists (select 1 from fn where proname = 'record_nfc_scan'
+                         and prosrc like '%card_linked%') then 'OK' else 'FAIL' end,
+       'run supabase/fixes/024 if FAIL'
 
 -- ---------- SCHOOLS ----------
 union all

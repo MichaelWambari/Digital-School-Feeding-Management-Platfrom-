@@ -7,6 +7,7 @@ import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
 import { Button, IconButton, ListItem, SegmentedButtons } from '../components/Paper';
 import { EmptyText, Field, ScreenHeader, StatusPill } from '../components/ScreenParts';
+import LinkCardPanel from '../components/LinkCardPanel';
 
 type Beneficiary = {
   beneficiary_id: string;
@@ -71,6 +72,8 @@ export default function StudentsScreen({ navigation }: any) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // True while the student's card is being linked by a tap (fix 024).
+  const [linking, setLinking] = useState(false);
 
   const loadBeneficiaries = useCallback(async () => {
     setLoading(true);
@@ -92,6 +95,16 @@ export default function StudentsScreen({ navigation }: any) {
   useEffect(() => {
     loadBeneficiaries();
   }, [loadBeneficiaries]);
+
+  const handleCardLinked = useCallback(
+    (tag: string) => {
+      // Already saved by the database; show it in the form and the list.
+      setForm((f) => ({ ...f, nfc_tag_id: tag }));
+      setEditing((e) => (e && e !== 'new' ? { ...e, nfc_tag_id: tag } : e));
+      loadBeneficiaries();
+    },
+    [loadBeneficiaries]
+  );
 
   function openForm(target: Beneficiary | 'new') {
     setForm(
@@ -251,6 +264,15 @@ export default function StudentsScreen({ navigation }: any) {
           placeholder="Card UID, optional"
           left={<TextInput.Icon icon="nfc-variant" />}
         />
+        {editing !== 'new' && canManage && (
+          <LinkCardPanel
+            schoolId={school.school_id}
+            beneficiaryId={editing.beneficiary_id}
+            firstName={editing.full_name.split(' ')[0]}
+            onLinked={handleCardLinked}
+            onBusyChange={setLinking}
+          />
+        )}
 
         <Text variant="labelLarge" style={styles.label}>Status</Text>
         <SegmentedButtons
@@ -270,7 +292,7 @@ export default function StudentsScreen({ navigation }: any) {
           mode="contained"
           onPress={handleSave}
           loading={saving}
-          disabled={saving}
+          disabled={saving || linking}
           contentStyle={styles.buttonContent}
           style={styles.saveButton}
         >
