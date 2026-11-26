@@ -4,9 +4,10 @@ import { Card, Divider, HelperText, List, Text } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
-import { SegmentedButtons } from '../components/Paper';
+import { Button, SegmentedButtons } from '../components/Paper';
 import { ScreenHeader, StatusPill } from '../components/ScreenParts';
 import { formatPacks, formatQty } from '../lib/units';
+import { Cell, htmlTable, escapeHtml, reportHtml, safeFileName, saveCsv, savePdf, toCsv } from '../lib/exportFile';
 
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', color: '#f59e0b' },
@@ -55,6 +56,16 @@ function datesBack(days: number) {
 }
 
 
+// ISO weekday (1 = Monday ... 7 = Sunday) of a YYYY-MM-DD date.
+function isoWeekday(date: string) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay() || 7;
+}
+
+function round3(n: number) {
+  return Math.round(n * 1000) / 1000;
+}
+
 function formatDay(date: string) {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
@@ -78,7 +89,7 @@ async function fetchAllRows<T>(
 
 export default function ReportsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, can } = useSchool();
+  const { school, profile, can } = useSchool();
   const schoolIds = [school.school_id];
   // Bumped on pull-to-refresh so the micronutrient section reloads too.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -95,6 +106,17 @@ export default function ReportsScreen({ navigation }: any) {
   });
   const [used, setUsed] = useState<ItemUsed[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  // Days in the range on which each meal was served (#3): on the
+  // timetable that weekday, and someone attended or the meal was closed
+  // as served. The attendance % is out of these days only.
+  const [servingDays, setServingDays] = useState<Record<MealKey, number>>({
+    breakfast: 0,
+    lunch: 0,
+    supper: 0,
+  });
+  const [micro, setMicro] = useState<{ target: string; rows: Map<string, Adequacy> } | null>(null);
+  const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const rangeDays = RANGES.find((r) => r.key === range)!.days;
 
@@ -107,7 +129,7 @@ export default function ReportsScreen({ navigation }: any) {
     const end = dates[0];
 
     try {
-      const [beneficiaryResult, itemResult, attendance, consumption] = await Promise.all([
+      const [beneficiaryResult, itemResult, attendance, consumption, scheduleResult, closureResult] = await Promise.all([
         supabase
           .from('beneficiaries')
           .select('*', { count: 'exact', head: true })
@@ -137,9 +159,17 @@ export default function ReportsScreen({ navigation }: any) {
             .order('consumption_id')
             .range(from, to)
         ),
+        supabase.from('meal_schedules').select('weekday, meal_type').in('school_id', schoolIds),
+        supabase
+          .from('meal_closures')
+          .select('closure_date, meal_type, status')
+          .in('school_id', schoolIds)
+          .gte('closure_date', start)
+          .lte('closure_date', end),
       ]);
       if (beneficiaryResult.error) throw new Error(beneficiaryResult.error.message);
       if (itemResult.error) throw new Error(itemResult.error.message);
+      if (scheduleResult.error) throw new Error(scheduleResult.error.message);
 
       // Attendance per day and meal, with a row for every day even when nobody attended.
       const byDay = new Map<string, DayRow>(
@@ -156,6 +186,22 @@ export default function ReportsScreen({ navigation }: any) {
         day.counts[meal] += 1;
         day.total += 1;
         totals[meal] += 1;
+      }
+
+      // Serving days per meal. Closures (fix 016) are optional; without
+      // them, attendance alone decides.
+      const scheduled = new Set((scheduleResult.data ?? []).map((m: any) => `${m.weekday}:${m.meal_type}`));
+      const closedServed = new Set(
+        (closureResult.error ? [] : closureResult.data ?? [])
+          .filter((c: any) => c.status === 'closed')
+          .map((c: any) => `${c.closure_date}:${c.meal_type}`)
+      );
+      const served: Record<MealKey, number> = { breakfast: 0, lunch: 0, supper: 0 };
+      for (const day of byDay.values()) {
+        for (const m of MEALS) {
+          if (!scheduled.has(`${isoWeekday(day.date)}:${m.key}`)) continue;
+          if (day.counts[m.key] > 0 || closedServed.has(`${day.date}:${m.key}`)) served[m.key] += 1;
+        }
       }
 
       // Food used per item over the range. Each record is one food at one meal.
@@ -181,6 +227,7 @@ export default function ReportsScreen({ navigation }: any) {
       setItems(loadedItems);
       setDays([...byDay.values()]);
       setMealTotals(totals);
+      setServingDays(served);
       setUsed([...byItem.values()].filter((e) => e.meals > 0).sort((a, b) => b.meals - a.meals));
     } catch (e) {
       setError(`Could not load report: ${e instanceof Error ? e.message : String(e)}`);
@@ -200,6 +247,121 @@ export default function ReportsScreen({ navigation }: any) {
     (i) => (i.reorder_level ?? 0) > 0 && i.quantity_available <= (i.reorder_level ?? 0)
   );
 
+  function attendancePercent(meal: MealKey): number | null {
+    if (activeCount === 0 || servingDays[meal] === 0) return null;
+    return Math.round((mealTotals[meal] / (activeCount * servingDays[meal])) * 100);
+  }
+
+  // ---------------- Export (#1) ----------------
+  function sections() {
+    const dates = datesBack(rangeDays);
+    const start = dates[dates.length - 1];
+    const end = dates[0];
+    const percent = (m: MealKey) => {
+      const p = attendancePercent(m);
+      return p === null ? '' : `${p}%`;
+    };
+    const summary: Cell[][] = MEALS.map((m) => [m.label, mealTotals[m.key], servingDays[m.key], percent(m.key)]);
+    const daily: Cell[][] = [...days]
+      .reverse()
+      .map((d) => [d.date, d.counts.breakfast, d.counts.lunch, d.counts.supper, d.total]);
+    const food: Cell[][] = used.map((e) => [e.item.item_name, round3(e.quantity), e.item.unit ?? '', e.meals]);
+    const stock: Cell[][] = items.map((i) => [
+      i.item_name,
+      round3(i.quantity_available),
+      i.unit ?? '',
+      i.reorder_level ?? '',
+      lowStock.includes(i) ? 'LOW' : '',
+    ]);
+    const nutrients: Cell[][] = micro
+      ? MICRONUTRIENTS.flatMap((n) => {
+          const r = micro.rows.get(n.key);
+          if (!r || r.students === 0) return [];
+          return [[n.label, `${Number(r.median_percent ?? 0)}%`, r.below_target, r.students]];
+        })
+      : [];
+    return { start, end, summary, daily, food, stock, nutrients };
+  }
+
+  async function exportReport(format: 'csv' | 'pdf') {
+    setExporting(format);
+    setExportError(null);
+    try {
+      const s = sections();
+      const generated = new Date().toLocaleString();
+      const base = safeFileName(`${school.name} report ${s.start} to ${s.end}`);
+      const target = micro?.target ?? '30';
+      const mealHead = ['Meal', 'Students served', 'Days served', 'Average attendance'];
+      const dayHead = ['Date', 'Breakfast', 'Lunch', 'Supper', 'Total'];
+      const foodHead = ['Food', 'Quantity', 'Unit', 'Meals'];
+      const stockHead = ['Food', 'In stock', 'Unit', 'Reorder level', 'Low'];
+      const nutrientHead = ['Nutrient', 'Median share of need', `Students below ${target}%`, 'Students assessed'];
+
+      if (format === 'csv') {
+        const rows: Cell[][] = [
+          [`${school.name}: feeding report`],
+          ['Period', s.start, s.end],
+          ['Active students', activeCount],
+          ['Generated', generated, profile.full_name],
+          [],
+          ['Meal attendance'],
+          mealHead,
+          ...s.summary,
+          [],
+          ['Attendance by day'],
+          dayHead,
+          ...s.daily,
+          [],
+          ['Food used'],
+          foodHead,
+          ...s.food,
+          [],
+          ['Current stock'],
+          stockHead,
+          ...s.stock,
+        ];
+        if (s.nutrients.length > 0) {
+          rows.push([], [`Micronutrients (target ${target}% of daily need)`], nutrientHead, ...s.nutrients);
+        }
+        await saveCsv(`${base}.csv`, toCsv(rows));
+      } else {
+        const body = [
+          `<h1>${escapeHtml(school.name)}: feeding report</h1>`,
+          `<p class="meta">${s.start} to ${s.end} · ${activeCount} active students</p>`,
+          `<p class="meta">Generated ${escapeHtml(generated)} by ${escapeHtml(profile.full_name)}</p>`,
+          '<h2>Meal attendance</h2>',
+          htmlTable(mealHead, s.summary, [1, 2, 3]),
+          '<p class="note">Average attendance is the share of active students attending, over the days the meal was served (on the timetable, with at least one student recorded).</p>',
+          rangeDays > 1 ? '<h2>Attendance by day</h2>' + htmlTable(dayHead, s.daily, [1, 2, 3, 4]) : '',
+          '<h2>Food used</h2>',
+          s.food.length ? htmlTable(foodHead, s.food, [1, 3]) : '<p>No food used in this period.</p>',
+          '<h2>Current stock</h2>',
+          s.stock.length ? htmlTable(stockHead, s.stock, [1, 3]) : '<p>No inventory items yet.</p>',
+          s.nutrients.length
+            ? "<h2>Micronutrients: students' needs met</h2>" +
+              htmlTable(nutrientHead, s.nutrients, [1, 2, 3]) +
+              `<p class="note">Share of each student's daily need (FAO/WHO 2004) met by school meals; target ${target}%. Food values: Kenya Food Composition Tables 2018.</p>`
+            : '',
+        ].join('\n');
+        await savePdf(`${base}.pdf`, reportHtml(body));
+      }
+
+      // A record of who exported what, in the reports table. A failure
+      // here doesn't undo the export.
+      await supabase.from('reports').insert({
+        school_id: school.school_id,
+        report_type: `school_report_${format}`,
+        start_date: s.start,
+        end_date: s.end,
+        generated_by: profile.user_id,
+      });
+    } catch (e) {
+      setExportError(`Could not export: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(null);
+    }
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -218,6 +380,30 @@ export default function ReportsScreen({ navigation }: any) {
 
       {error && <HelperText type="error">{error}</HelperText>}
 
+      <View style={styles.exportRow}>
+        <Button
+          mode="outlined"
+          icon="file-delimited-outline"
+          onPress={() => exportReport('csv')}
+          loading={exporting === 'csv'}
+          disabled={loading || exporting !== null}
+          style={styles.exportButton}
+        >
+          Export CSV
+        </Button>
+        <Button
+          mode="outlined"
+          icon="file-pdf-box"
+          onPress={() => exportReport('pdf')}
+          loading={exporting === 'pdf'}
+          disabled={loading || exporting !== null}
+          style={styles.exportButton}
+        >
+          Export PDF
+        </Button>
+      </View>
+      {exportError && <HelperText type="error">{exportError}</HelperText>}
+
       {/* ---------------- Attendance ---------------- */}
       <Text variant="titleMedium" style={styles.sectionTitle}>Meal attendance</Text>
       <View style={styles.tiles}>
@@ -231,7 +417,7 @@ export default function ReportsScreen({ navigation }: any) {
               <Text variant="bodySmall" style={styles.tileLabel}>{m.label}</Text>
               {activeCount > 0 && (
                 <Text variant="labelSmall" style={styles.tileMeta}>
-                  {Math.round((mealTotals[m.key] / (activeCount * rangeDays)) * 100)}% avg
+                  {attendancePercent(m.key) === null ? 'not served' : `${attendancePercent(m.key)}% avg`}
                 </Text>
               )}
             </Card.Content>
@@ -240,7 +426,8 @@ export default function ReportsScreen({ navigation }: any) {
       </View>
       <Text variant="bodySmall" style={styles.note}>
         {totalAttendance.toLocaleString()} meals served · {activeCount} active students. The
-        % is the share of active students attending that meal each day, on average.
+        % is the share of active students attending that meal, on average over the days it was
+        served (on the timetable, with at least one student recorded). Other days don't count.
       </Text>
 
       {rangeDays > 1 && (
@@ -277,7 +464,13 @@ export default function ReportsScreen({ navigation }: any) {
         </Card>
       )}
 
-      {can('view_nutrition') && <MicronutrientSection rangeDays={rangeDays} refreshKey={refreshKey} />}
+      {can('view_nutrition') && (
+        <MicronutrientSection
+          rangeDays={rangeDays}
+          refreshKey={refreshKey}
+          onLoaded={(target, rows) => setMicro({ target, rows })}
+        />
+      )}
 
       {/* ---------------- Food used ---------------- */}
       <Text variant="titleMedium" style={styles.sectionTitle}>Food used</Text>
@@ -384,7 +577,15 @@ type Adequacy = {
   not_assessed: number;
 };
 
-function MicronutrientSection({ rangeDays, refreshKey }: { rangeDays: number; refreshKey: number }) {
+function MicronutrientSection({
+  rangeDays,
+  refreshKey,
+  onLoaded,
+}: {
+  rangeDays: number;
+  refreshKey: number;
+  onLoaded: (target: string, rows: Map<string, Adequacy>) => void;
+}) {
   const { colors, styles } = useThemedStyles(makeStyles);
   const { school } = useSchool();
   const [target, setTarget] = useState('30');
@@ -409,9 +610,12 @@ function MicronutrientSection({ rangeDays, refreshKey }: { rangeDays: number; re
             : error.message
         );
         setRows(new Map());
+        onLoaded(target, new Map());
       } else {
         setError(null);
-        setRows(new Map(((data ?? []) as Adequacy[]).map((r) => [r.nutrient, r])));
+        const loaded = new Map(((data ?? []) as Adequacy[]).map((r) => [r.nutrient, r]));
+        setRows(loaded);
+        onLoaded(target, loaded);
       }
     })();
     return () => {
@@ -512,4 +716,6 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   rowValue: { alignSelf: 'center', fontWeight: '600', color: c.text },
   lowPill: { alignSelf: 'flex-end', marginTop: 4 },
   bottomSpacer: { height: 40 },
+  exportRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  exportButton: { flex: 1, borderRadius: 12 },
 });
