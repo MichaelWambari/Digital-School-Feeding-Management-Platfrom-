@@ -10,7 +10,7 @@ import { Button, SegmentedButtons } from '../components/Paper';
 
 // Sign in, or (for a headteacher setting up their school) create an
 // account. A new account then names its school (CreateSchoolScreen).
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }: any) {
   const { styles } = useThemedStyles(makeStyles);
   const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   // Who is signing up: a headteacher setting up a school, or a food supplier.
@@ -332,6 +332,9 @@ export default function LoginScreen() {
             </>
           )}
         </Surface>
+        <Button mode="text" compact onPress={() => navigation.navigate('Privacy')} style={styles.privacyLink}>
+          Privacy notice
+        </Button>
       </FadeIn>
     </View>
   );
@@ -383,4 +386,5 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   dividerLine: { flex: 1 },
   dividerText: { color: c.textMuted, marginHorizontal: 12 },
   hint: { color: c.textMuted, textAlign: 'center', marginTop: 12 },
+  privacyLink: { marginTop: 12, alignSelf: 'center' },
 });

@@ -61,7 +61,7 @@ export function ageFromBirth(dob: string): number | null {
 
 export default function StudentsScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, can } = useSchool();
+  const { school, can, isHeadteacher } = useSchool();
   // The database checks the same permission.
   const canManage = can('manage_students');
   // Tapping a student opens their feeding report, for those who may see it.
@@ -76,6 +76,8 @@ export default function StudentsScreen({ navigation }: any) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Erasing a student (fix 030): first press asks, second press erases.
+  const [confirmErase, setConfirmErase] = useState(false);
   // True while the student's card is being linked by a tap (fix 024).
   const [linking, setLinking] = useState(false);
 
@@ -129,7 +131,36 @@ export default function StudentsScreen({ navigation }: any) {
           }
     );
     setFormError(null);
+    setConfirmErase(false);
     setEditing(target);
+  }
+
+  // Permanently removes the student, their attendance and nutrition
+  // records, and their details in the audit log (headteacher only).
+  async function handleErase() {
+    if (!editing || editing === 'new') return;
+    if (!confirmErase) {
+      setConfirmErase(true);
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const { error } = await supabase.rpc('erase_student', { p_beneficiary_id: editing.beneficiary_id });
+      if (error) {
+        setFormError(
+          error.code === 'PGRST202' ? 'Run supabase/fixes/030_data_protection.sql first.' : error.message
+        );
+        return;
+      }
+      setEditing(null);
+      await loadBeneficiaries();
+    } catch {
+      setFormError('Unable to connect. Check your connection and try again.');
+    } finally {
+      setSaving(false);
+      setConfirmErase(false);
+    }
   }
 
   async function handleSave() {
@@ -317,10 +348,31 @@ export default function StudentsScreen({ navigation }: any) {
           loading={saving}
           disabled={saving || linking}
           contentStyle={styles.buttonContent}
-          style={styles.saveButton}
+          style={editing !== 'new' && isHeadteacher ? styles.saveButtonTight : styles.saveButton}
         >
           Save
         </Button>
+        {editing !== 'new' && isHeadteacher && (
+          <>
+            {confirmErase && (
+              <Text variant="bodySmall" style={styles.eraseWarning}>
+                This permanently deletes {editing.full_name}, every meal they were recorded at and their
+                nutrition records. It can't be undone. To keep their history, mark them Inactive instead.
+              </Text>
+            )}
+            <Button
+              mode={confirmErase ? 'contained' : 'text'}
+              icon="delete-forever-outline"
+              buttonColor={confirmErase ? colors.danger : undefined}
+              textColor={confirmErase ? undefined : colors.danger}
+              onPress={handleErase}
+              disabled={saving || linking}
+              style={styles.saveButton}
+            >
+              {confirmErase ? 'Erase permanently' : 'Erase student'}
+            </Button>
+          </>
+        )}
       </FadeInScrollView>
     );
   }
@@ -457,6 +509,8 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   fieldHint: { color: c.textMuted, marginTop: 6 },
   buttonContent: { paddingVertical: 6 },
   saveButton: { marginTop: 8, marginBottom: 40 },
+  saveButtonTight: { marginTop: 8 },
+  eraseWarning: { color: c.danger, marginTop: 16 },
   search: { backgroundColor: c.surface },
   list: { marginTop: 12 },
   row: { paddingRight: 0 },

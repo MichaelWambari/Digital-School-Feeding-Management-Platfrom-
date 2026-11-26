@@ -19,6 +19,7 @@ import ReportsScreen from '../screens/ReportsScreen';
 import StaffScreen from '../screens/StaffScreen';
 import VerifyCodeScreen from '../screens/VerifyCodeScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
+import PrivacyScreen from '../screens/PrivacyScreen';
 import PermissionsScreen from '../screens/PermissionsScreen';
 import SchoolProfileScreen from '../screens/SchoolProfileScreen';
 import TimetableScreen from '../screens/TimetableScreen';
@@ -45,6 +46,7 @@ function accountScreens(kind: AccountKind) {
         <Stack.Screen name="SupplierDocuments" component={SupplierDocumentsScreen} />
         <Stack.Screen name="SupplierSchools" component={SupplierSchoolsScreen} />
         <Stack.Screen name="SupplierRequests" component={SupplierRequestsScreen} />
+        <Stack.Screen name="Privacy" component={PrivacyScreen} />
       </>
     );
   }
@@ -65,6 +67,7 @@ function accountScreens(kind: AccountKind) {
       <Stack.Screen name="FoodValues" component={FoodValuesScreen} />
       <Stack.Screen name="Suppliers" component={SuppliersScreen} />
       <Stack.Screen name="SupplierDetail" component={SupplierDetailScreen} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} />
     </>
   );
 }
@@ -185,7 +188,10 @@ export default function AppNavigator() {
           {kind ? (
             accountScreens(kind)
           ) : (
-            <Stack.Screen name="Login" component={LoginScreen} />
+            <>
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="Privacy" component={PrivacyScreen} />
+            </>
           )}
         </Stack.Navigator>
       </NavigationContainer>

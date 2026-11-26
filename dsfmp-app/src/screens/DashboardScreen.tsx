@@ -8,7 +8,7 @@ import { FadeIn, PressableScale } from '../components/Motion';
 import { DashboardHeader, MenuGrid, MenuItem, ThemeSection } from '../components/Dashboard';
 
 // First steps for a new school, shown to the headteacher until all are done.
-type Step = { key: string; label: string; screen: string; done: boolean };
+type Step = { key: string; label: string; screen: string; params?: object; done: boolean };
 
 // The school's home screen. Tiles follow what the user may do here.
 export default function DashboardScreen({ navigation }: any) {
@@ -30,13 +30,26 @@ export default function DashboardScreen({ navigation }: any) {
     if (!isHeadteacher) return;
     const count = async (query: PromiseLike<{ count: number | null }>) => ((await query).count ?? 0) > 0;
     const head = { count: 'exact' as const, head: true };
-    const [hasServing, hasStudents, hasStock, hasCoordinator] = await Promise.all([
+    const [hasServing, hasStudents, hasStock, hasCoordinator, terms] = await Promise.all([
       count(supabase.from('meal_ingredients').select('*', head).eq('school_id', school.school_id)),
       count(supabase.from('beneficiaries').select('*', head).eq('school_id', school.school_id)),
       count(supabase.from('inventory_items').select('*', head).eq('school_id', school.school_id)),
       count(supabase.from('users').select('*', head).eq('school_id', school.school_id).eq('role', 'coordinator')),
+      // Missing before fix 030: then the step isn't shown.
+      supabase.from('schools').select('data_terms_accepted_at').eq('school_id', school.school_id).maybeSingle(),
     ]);
     setSteps([
+      ...(terms.error
+        ? []
+        : [
+            {
+              key: 'privacy',
+              label: 'Accept the data protection terms',
+              screen: 'Privacy',
+              params: { acceptFor: school.school_id },
+              done: !!terms.data?.data_terms_accepted_at,
+            },
+          ]),
       { key: 'timetable', label: 'Set meal times and a dish with its serving', screen: 'Timetable', done: hasServing },
       { key: 'students', label: 'Add your students', screen: 'Students', done: hasStudents },
       { key: 'stock', label: 'Record the food you have in stock', screen: 'Inventory', done: hasStock },
@@ -90,7 +103,7 @@ export default function DashboardScreen({ navigation }: any) {
             />
             <Card.Content>
               {steps.map((st) => (
-                <PressableScale key={st.key} onPress={() => navigation.navigate(st.screen)} disabled={st.done}>
+                <PressableScale key={st.key} onPress={() => navigation.navigate(st.screen, st.params)} disabled={st.done}>
                   <List.Item
                     title={st.label}
                     titleStyle={st.done ? styles.stepDone : undefined}
