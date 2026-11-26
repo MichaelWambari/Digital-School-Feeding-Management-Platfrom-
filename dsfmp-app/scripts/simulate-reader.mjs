@@ -39,7 +39,7 @@ const HELP = `Usage: npm run simulate -- --device <device id> --tag <card id>[,<
   --help              Show this message
 
 Supabase URL and anon key are read from SUPABASE_URL and SUPABASE_ANON_KEY,
-or from src/lib/supabase.ts if those are not set.`;
+or from the app's .env.local if those are not set.`;
 
 let args;
 try {
@@ -161,9 +161,9 @@ function loadConfig() {
   if (!url || !key) {
     // Fall back to the values the app itself uses.
     try {
-      const source = readFileSync(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8');
-      url ??= source.match(/SUPABASE_URL\s*=\s*['"]([^'"]+)['"]/)?.[1];
-      key ??= source.match(/SUPABASE_ANON_KEY\s*=\s*['"]([^'"]+)['"]/)?.[1];
+      const source = readFileSync(new URL('../.env.local', import.meta.url), 'utf8');
+      url ??= source.match(/^EXPO_PUBLIC_SUPABASE_URL=(.+)$/m)?.[1].trim();
+      key ??= source.match(/^EXPO_PUBLIC_SUPABASE_ANON_KEY=(.+)$/m)?.[1].trim();
     } catch {
       // handled below
     }

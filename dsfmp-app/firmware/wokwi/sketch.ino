@@ -24,7 +24,7 @@
 const char *WIFI_SSID = "Wokwi-GUEST";
 const char *WIFI_PASSWORD = "";
 
-// Copy both values from dsfmp-app/src/lib/supabase.ts.
+// Copy both values from dsfmp-app/.env.local (EXPO_PUBLIC_SUPABASE_*).
 const char *SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
 const char *SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 

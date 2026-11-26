@@ -130,7 +130,7 @@ nothing is deducted twice (`supabase/fixes/016_meal_close.sql`).
 dsfmp-app/                  The Expo app (run all commands from here)
   App.tsx                   App entry: theme provider + navigator
   src/
-    lib/supabase.ts         Supabase client (project URL + anon key)
+    lib/supabase.ts         Supabase client (URL + key from .env.local)
     navigation/             Auth-based routing (logged out → Login)
     school/SchoolContext.tsx  Signed-in user's profile, school and permissions;
                             use useAccount(), or useSchool() on school screens
@@ -223,8 +223,9 @@ recorded.
    `dsfmp-app/supabase/schema.sql`, and run it. Then run each file in
    `dsfmp-app/supabase/fixes/` from `009_independent_schools.sql` on, in
    number order (`schema.sql` already includes fixes 001–008).
-2. Copy the **Project URL** and **anon/publishable key** from
-   **Project Settings → API** into `dsfmp-app/src/lib/supabase.ts`.
+2. Copy `dsfmp-app/.env.example` to `dsfmp-app/.env.local` (git ignores it)
+   and fill in the **Project URL** and **anon/publishable key** from
+   **Project Settings → API**. Restart `npx expo start` after changing them.
 
 > **Warning:** `schema.sql` is a bootstrap script. It **drops and recreates**
 > the tables, so running it on a live database deletes their data. To update
