@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, useThemedStyles } from '../theme/ThemeContext';
 import { useSchool } from '../school/SchoolContext';
 import { FadeInScrollView } from '../components/Motion';
-import { Button, Chip, IconButton } from '../components/Paper';
+import { Button, Chip, IconButton, SegmentedButtons } from '../components/Paper';
 import { Field, ScreenHeader } from '../components/ScreenParts';
 
 type MealType = 'breakfast' | 'lunch' | 'supper';
@@ -68,8 +68,39 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 // only accepted inside these windows.
 export default function TimetableScreen({ navigation }: any) {
   const { colors, styles } = useThemedStyles(makeStyles);
-  const { school, can } = useSchool();
+  const { school, can, isHeadteacher } = useSchool();
   const canEdit = can('manage_meals');
+  // Minutes after a meal ends that a tap still counts (fix 032); null
+  // before the fix is installed, which hides the setting.
+  const [grace, setGrace] = useState<number | null>(null);
+  const [graceSaving, setGraceSaving] = useState(false);
+  const [graceError, setGraceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from('schools')
+      .select('scan_grace_minutes')
+      .eq('school_id', school.school_id)
+      .maybeSingle()
+      .then(({ data, error }) => setGrace(error ? null : data?.scan_grace_minutes ?? 0));
+  }, [school.school_id]);
+
+  async function saveGrace(minutes: number) {
+    const before = grace;
+    setGrace(minutes);
+    setGraceSaving(true);
+    setGraceError(null);
+    const { data, error } = await supabase
+      .from('schools')
+      .update({ scan_grace_minutes: minutes })
+      .eq('school_id', school.school_id)
+      .select('scan_grace_minutes');
+    setGraceSaving(false);
+    if (error || !data || data.length === 0) {
+      setGrace(before);
+      setGraceError(error ? error.message : 'Only the headteacher can change this.');
+    }
+  }
   const [day, setDay] = useState(() => todayWeekday(school.timezone));
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
@@ -172,9 +203,29 @@ export default function TimetableScreen({ navigation }: any) {
         }
       />
       <Text variant="bodySmall" style={styles.hint}>
-        Students can only register attendance inside these times ({school.timezone} time).
+        Students can only register attendance inside these times ({school.timezone} time)
+        {grace ? `, or up to ${grace} minutes after a meal ends` : ''}.
         {canEdit ? ' Tap a meal to change it.' : ''}
       </Text>
+
+      {grace !== null && isHeadteacher && (
+        <View style={styles.graceBox}>
+          <Text variant="labelLarge" style={styles.graceTitle}>Late taps</Text>
+          <Text variant="bodySmall" style={styles.hint}>
+            How long after a meal ends a card tap still counts for it.
+          </Text>
+          <SegmentedButtons
+            value={String(grace)}
+            onValueChange={(v) => saveGrace(Number(v))}
+            buttons={[0, 5, 10, 15, 30].map((m) => ({
+              value: String(m),
+              label: m === 0 ? 'None' : `${m} min`,
+              disabled: graceSaving,
+            }))}
+          />
+          {graceError && <HelperText type="error">{graceError}</HelperText>}
+        </View>
+      )}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
         {DAYS.map((d) => (
@@ -649,6 +700,8 @@ function EditMealView({
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, padding: 20 },
   hint: { color: c.textMuted, marginTop: 4, marginBottom: 4 },
+  graceBox: { marginTop: 8, marginBottom: 8 },
+  graceTitle: { color: c.text },
   dayRow: { gap: 8, paddingVertical: 12 },
   dayTitle: { color: c.text, marginTop: 4, marginBottom: 8 },
   card: { borderRadius: 16, marginBottom: 10 },
