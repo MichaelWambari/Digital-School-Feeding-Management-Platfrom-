@@ -33,8 +33,24 @@ type Transaction = {
   transaction_date: string;
   supplier_name?: string | null;
   distribution_id: string | null;
+  recorded_by: string | null;
+  created_at: string;
   food_consumption: { meal_type: string } | null;
 };
+
+// A fixed mistake (fix 031).
+type Correction = {
+  correction_id: string;
+  transaction_type: 'received' | 'used';
+  transaction_date: string;
+  meal_type: string | null;
+  old_quantity: number;
+  new_quantity: number;
+  reason: string;
+  corrected_at: string;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const MEAL_LABELS: Record<string, string> = {
   breakfast: 'breakfast',
@@ -304,8 +320,15 @@ function StockDetailView({
   onChanged: () => Promise<void>;
 }) {
   const { styles } = useThemedStyles(makeStyles);
-  const { isHeadteacher } = useSchool();
+  const { isHeadteacher, profile } = useSchool();
   const unit = item.food_items.unit;
+  const [corrections, setCorrections] = useState<Correction[]>([]);
+  // The movement being corrected, and the form's values.
+  const [correcting, setCorrecting] = useState<Transaction | null>(null);
+  const [newQuantity, setNewQuantity] = useState('');
+  const [reason, setReason] = useState('');
+  const [correctError, setCorrectError] = useState<string | null>(null);
+  const [correctSaving, setCorrectSaving] = useState(false);
   const [reorderLevel, setReorderLevel] = useState(String(item.reorder_level ?? 0));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -322,7 +345,62 @@ function StockDetailView({
       .limit(15);
     if (!error) setHistory((data ?? []) as unknown as Transaction[]);
     setHistoryLoading(false);
+    // Missing before fix 031: then there is simply no list.
+    const { data: fixes, error: fixesError } = await supabase
+      .from('stock_corrections')
+      .select('correction_id, transaction_type, transaction_date, meal_type, old_quantity, new_quantity, reason, corrected_at')
+      .eq('item_id', item.item_id)
+      .order('corrected_at', { ascending: false })
+      .limit(10);
+    setCorrections(fixesError ? [] : ((fixes ?? []) as Correction[]));
   }, [item.item_id]);
+
+  // The headteacher can correct any entry; whoever recorded one, for a day.
+  function canCorrect(t: Transaction) {
+    if (isHeadteacher) return true;
+    return t.recorded_by === profile.user_id && Date.now() - new Date(t.created_at).getTime() < DAY_MS;
+  }
+
+  function startCorrecting(t: Transaction) {
+    setCorrecting(t);
+    setNewQuantity(String(Number(t.quantity)));
+    setReason('');
+    setCorrectError(null);
+  }
+
+  async function handleCorrect() {
+    if (!correcting) return;
+    const quantity = Number(newQuantity.trim());
+    if (newQuantity.trim() === '' || !Number.isFinite(quantity) || quantity < 0) {
+      setCorrectError('Enter the right amount (0 removes the entry).');
+      return;
+    }
+    if (!reason.trim()) {
+      setCorrectError('Say why the entry is being corrected.');
+      return;
+    }
+    setCorrectSaving(true);
+    setCorrectError(null);
+    try {
+      const { error } = await supabase.rpc('correct_stock_entry', {
+        p_transaction_id: correcting.transaction_id,
+        p_new_quantity: quantity,
+        p_reason: reason.trim(),
+      });
+      if (error) {
+        setCorrectError(
+          error.code === 'PGRST202' ? 'Run supabase/fixes/031_stock_corrections.sql first.' : error.message
+        );
+        return;
+      }
+      setCorrecting(null);
+      await Promise.all([loadHistory(), onChanged()]);
+    } catch {
+      setCorrectError(CONNECTION_ERROR);
+    } finally {
+      setCorrectSaving(false);
+    }
+  }
 
   useEffect(() => {
     loadHistory();
@@ -410,6 +488,44 @@ function StockDetailView({
       )}
 
       <Text variant="titleSmall" style={styles.sectionTitle}>Recent movements</Text>
+      {history.some(canCorrect) && !correcting && (
+        <Text variant="bodySmall" style={styles.hint}>Tap an entry to correct a mistake.</Text>
+      )}
+      {correcting && (
+        <View style={styles.correctBox}>
+          <Text variant="titleSmall" style={styles.correctTitle}>
+            Correct: {correcting.transaction_type === 'received' ? 'received' : 'used'}{' '}
+            {formatQty(correcting.quantity, unit)} on {correcting.transaction_date}
+          </Text>
+          <Field
+            label={`Right amount (${unit})`}
+            value={newQuantity}
+            onChangeText={setNewQuantity}
+            keyboardType="decimal-pad"
+            placeholder="0 removes the entry"
+          />
+          <Field
+            label="Reason"
+            value={reason}
+            onChangeText={setReason}
+            placeholder="e.g. typed 100 instead of 10"
+          />
+          <Text variant="bodySmall" style={styles.hint}>
+            The stock changes by the difference. The old amount and the reason are kept.
+          </Text>
+          <HelperText type="error" visible={!!correctError}>
+            {correctError}
+          </HelperText>
+          <View style={styles.inlineRow}>
+            <Button mode="text" onPress={() => setCorrecting(null)} disabled={correctSaving}>
+              Cancel
+            </Button>
+            <Button mode="contained" onPress={handleCorrect} loading={correctSaving} disabled={correctSaving}>
+              Save correction
+            </Button>
+          </View>
+        </View>
+      )}
       {historyLoading ? (
         <ActivityIndicator style={styles.historyLoading} />
       ) : history.length === 0 ? (
@@ -436,9 +552,23 @@ function StockDetailView({
               date={t.transaction_date}
               amount={formatQty(t.quantity, unit)}
               direction={received ? 'in' : 'out'}
+              onPress={canCorrect(t) && !correcting ? () => startCorrecting(t) : undefined}
             />
           );
         })
+      )}
+
+      {corrections.length > 0 && (
+        <>
+          <Text variant="titleSmall" style={styles.sectionTitle}>Corrections</Text>
+          {corrections.map((c) => (
+            <Text key={c.correction_id} variant="bodySmall" style={styles.correctionLine}>
+              {new Date(c.corrected_at).toLocaleDateString()}:{' '}
+              {c.transaction_type === 'received' ? 'received' : `used${c.meal_type ? ` at ${c.meal_type}` : ''}`} on{' '}
+              {c.transaction_date}, {formatQty(c.old_quantity, unit)} → {formatQty(c.new_quantity, unit)}. {c.reason}
+            </Text>
+          ))}
+        </>
       )}
       <View style={styles.bottomSpacer} />
     </FadeInScrollView>
@@ -467,4 +597,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   rowQty: { fontWeight: '600', color: c.text },
   lowPill: { alignSelf: 'flex-end', marginTop: 4 },
   bottomSpacer: { height: 40 },
+  correctBox: { borderWidth: 1, borderColor: c.border, borderRadius: 12, padding: 12, marginVertical: 8 },
+  correctTitle: { color: c.text, marginBottom: 4 },
+  correctionLine: { color: c.textSecondary, marginTop: 4 },
 });

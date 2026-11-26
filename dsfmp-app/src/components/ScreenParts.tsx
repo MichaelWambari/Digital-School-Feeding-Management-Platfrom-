@@ -140,10 +140,12 @@ type MovementRowProps = {
   direction: 'in' | 'out';
   // The first row has no divider above it.
   first?: boolean;
+  // Makes the row tappable (e.g. to correct the entry).
+  onPress?: () => void;
 };
 
 // One line of a stock history: green and "+" for stock in, red and "−" for stock out.
-export function MovementRow({ title, date, amount, direction, first }: MovementRowProps) {
+export function MovementRow({ title, date, amount, direction, first, onPress }: MovementRowProps) {
   const { colors, styles } = useThemedStyles(makeStyles);
   const isIn = direction === 'in';
   const color = isIn ? colors.successText : colors.danger;
@@ -154,6 +156,7 @@ export function MovementRow({ title, date, amount, direction, first }: MovementR
         title={title}
         description={date}
         style={styles.movementRow}
+        onPress={onPress}
         left={(props) => (
           <List.Icon
             {...props}
