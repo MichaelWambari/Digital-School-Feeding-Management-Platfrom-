@@ -175,7 +175,7 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `food_nutrition` | Nutrients per 100 g/ml of each food: shared values and each school's own |
 | `attendance_nutrition` | For each attended meal, the dish, serving and estimated nutrients, as worked out when it was recorded |
 | `meal_attendance` | One row per student, meal and day |
-| `reports` | Saved reports (export is planned) |
+| `reports` | A record of each report exported from the Reports screen (CSV or PDF): who, when and the period |
 | `nfc_tag_logs` | Audit log of every NFC scan and its outcome |
 | `audit_logs` | Who changed schools, staff, permissions, students, reorder levels and deliveries, and when |
 | `suppliers` | Each supplier's business profile, one per supplier login |
@@ -185,6 +185,7 @@ The database has these tables (`schema.sql` plus the fixes from 009 on):
 | `meal_issues` | The amounts the kitchen saved on a meal's issue sheet |
 | `nutrient_requirements` | FAO/WHO recommended daily nutrient intakes for ages 4–18, by sex and (for iron and zinc) absorption |
 | `meal_closures` | Each school's closed meals: `closed`, `not_served`, `manual` or `no_recipe` |
+| `stock_corrections` | Each corrected stock entry: old and new amount, reason and who corrected it (fix 031) |
 | `food_distribution`, `central_transactions` | History of the retired central store (read-only) |
 
 Every school record has a `school_id`. Attendance, food used and stock
@@ -192,6 +193,14 @@ movements take theirs automatically from the student or item, so a record
 can't end up filed under the wrong school. The policies only show a school's
 records to its own staff while the school is active
 (`can_view_school()`, `has_school_role()`, `has_school_permission()`).
+Corrections go through `correct_stock_entry()` (fix 031): the headteacher can fix any
+entry and the person who recorded one can fix it within 24 hours, and each
+correction is logged. Children's data is covered by a privacy notice in the
+app (Kenya Data Protection Act 2019); the headteacher accepts the data terms
+for the school (`accept_data_terms()`) and can erase a student completely,
+including their details in the audit log (`erase_student()`, fix 030). A
+reader that loses Wi-Fi saves taps and sends them later with their time
+(`record_nfc_scan(p_scanned_at)`, fix 029).
 Stock never changes directly: recording food received
 (`record_stock_received()`), receiving an old dispatch
 (`receive_distribution()`) and recording food used each add a transaction,
