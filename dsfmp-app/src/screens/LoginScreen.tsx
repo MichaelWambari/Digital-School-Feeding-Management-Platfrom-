@@ -12,7 +12,7 @@ import { Button, SegmentedButtons } from '../components/Paper';
 // account. A new account then names its school (CreateSchoolScreen).
 export default function LoginScreen() {
   const { styles } = useThemedStyles(makeStyles);
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   // Who is signing up: a headteacher setting up a school, or a food supplier.
   const [accountType, setAccountType] = useState<'school' | 'supplier'>('school');
   const [fullName, setFullName] = useState('');
@@ -20,16 +20,54 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState<'password' | 'google' | null>(null);
+  const [loading, setLoading] = useState<'password' | 'google' | 'reset' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const signingUp = mode === 'signup';
+  const resetting = mode === 'reset';
 
   function switchMode() {
-    setMode(signingUp ? 'signin' : 'signup');
+    setMode(signingUp || resetting ? 'signin' : 'signup');
     setError(null);
     setInfo(null);
     setConfirm('');
+  }
+
+  function startReset() {
+    setMode('reset');
+    setError(null);
+    setInfo(null);
+  }
+
+  // Emails a link to choose a new password. Opening it signs the user in
+  // and AppNavigator shows ChangePasswordScreen (PASSWORD_RECOVERY).
+  async function handleReset() {
+    if (!email.trim()) {
+      setError('Enter the email you sign in with.');
+      return;
+    }
+    setLoading('reset');
+    setError(null);
+    setInfo(null);
+    try {
+      const redirectTo =
+        Platform.OS === 'web' ? window.location.origin : Linking.createURL('reset-password');
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+      if (error) {
+        setError(describeAuthError(error.message));
+        return;
+      }
+      // The same message whether or not the account exists, so the form
+      // can't be used to find out who has an account.
+      setInfo(
+        'If an account uses this email, a link to choose a new password is on its way. ' +
+          'Open it on this device. Google accounts sign in with Google instead.'
+      );
+    } catch {
+      setError('Unable to connect. Check your connection and try again.');
+    } finally {
+      setLoading(null);
+    }
   }
 
   // On the web, a failed Google sign-in comes back as an error in the URL.
@@ -150,10 +188,12 @@ export default function LoginScreen() {
 
         <Surface style={styles.card} elevation={1}>
           <Text variant="titleMedium" style={styles.cardTitle}>
-            {signingUp ? 'Create an account' : 'Sign in'}
+            {resetting ? 'Forgot your password?' : signingUp ? 'Create an account' : 'Sign in'}
           </Text>
           <Text variant="bodySmall" style={styles.cardSubtitle}>
-            {!signingUp
+            {resetting
+              ? "Enter your email and we'll send you a link to choose a new password."
+              : !signingUp
               ? 'Headteachers, coordinators and suppliers'
               : accountType === 'school'
               ? "For a headteacher setting up their school. Coordinators don't sign up: your headteacher adds you."
@@ -192,26 +232,29 @@ export default function LoginScreen() {
             keyboardType="email-address"
             value={email}
             onChangeText={setEmail}
+            onSubmitEditing={resetting ? handleReset : undefined}
           />
-          <TextInput
-            mode="outlined"
-            label="Password"
-            style={styles.passwordInput}
-            left={<TextInput.Icon icon="lock-outline" />}
-            right={
-              <TextInput.Icon
-                icon={showPassword ? 'eye-off' : 'eye'}
-                onPress={() => setShowPassword((shown) => !shown)}
-                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-              />
-            }
-            secureTextEntry={!showPassword}
-            autoComplete={signingUp ? 'new-password' : 'current-password'}
-            value={password}
-            onChangeText={setPassword}
-            onSubmitEditing={signingUp ? undefined : handleLogin}
-            error={!!error}
-          />
+          {!resetting && (
+            <TextInput
+              mode="outlined"
+              label="Password"
+              style={styles.passwordInput}
+              left={<TextInput.Icon icon="lock-outline" />}
+              right={
+                <TextInput.Icon
+                  icon={showPassword ? 'eye-off' : 'eye'}
+                  onPress={() => setShowPassword((shown) => !shown)}
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                />
+              }
+              secureTextEntry={!showPassword}
+              autoComplete={signingUp ? 'new-password' : 'current-password'}
+              value={password}
+              onChangeText={setPassword}
+              onSubmitEditing={signingUp ? undefined : handleLogin}
+              error={!!error}
+            />
+          )}
           {signingUp && (
             <TextInput
               mode="outlined"
@@ -235,38 +278,59 @@ export default function LoginScreen() {
             </HelperText>
           )}
 
-          <Button
-            mode="contained"
-            onPress={handleLogin}
-            loading={loading === 'password'}
-            disabled={loading !== null}
-            contentStyle={styles.buttonContent}
-          >
-            {signingUp ? 'Create account' : 'Login'}
-          </Button>
+          {resetting ? (
+            <Button
+              mode="contained"
+              onPress={handleReset}
+              loading={loading === 'reset'}
+              disabled={loading !== null}
+              contentStyle={styles.buttonContent}
+            >
+              Send reset link
+            </Button>
+          ) : (
+            <Button
+              mode="contained"
+              onPress={handleLogin}
+              loading={loading === 'password'}
+              disabled={loading !== null}
+              contentStyle={styles.buttonContent}
+            >
+              {signingUp ? 'Create account' : 'Login'}
+            </Button>
+          )}
+          {mode === 'signin' && (
+            <Button mode="text" onPress={startReset} disabled={loading !== null} style={styles.switchButton}>
+              Forgot password?
+            </Button>
+          )}
           <Button mode="text" onPress={switchMode} disabled={loading !== null} style={styles.switchButton}>
-            {signingUp ? 'I already have an account' : 'New headteacher or supplier? Create an account'}
+            {signingUp || resetting ? 'Back to sign in' : 'New headteacher or supplier? Create an account'}
           </Button>
 
-          <View style={styles.dividerRow}>
-            <Divider style={styles.dividerLine} />
-            <Text variant="bodySmall" style={styles.dividerText}>or</Text>
-            <Divider style={styles.dividerLine} />
-          </View>
+          {!resetting && (
+            <>
+              <View style={styles.dividerRow}>
+                <Divider style={styles.dividerLine} />
+                <Text variant="bodySmall" style={styles.dividerText}>or</Text>
+                <Divider style={styles.dividerLine} />
+              </View>
 
-          <Button
-            mode="outlined"
-            icon="google"
-            onPress={handleGoogle}
-            loading={loading === 'google'}
-            disabled={loading !== null}
-            contentStyle={styles.buttonContent}
-          >
-            Continue with Google
-          </Button>
-          <Text variant="bodySmall" style={styles.hint}>
-            Coordinators: use the Google account with the email your headteacher added. A new headteacher or supplier can also start here.
-          </Text>
+              <Button
+                mode="outlined"
+                icon="google"
+                onPress={handleGoogle}
+                loading={loading === 'google'}
+                disabled={loading !== null}
+                contentStyle={styles.buttonContent}
+              >
+                Continue with Google
+              </Button>
+              <Text variant="bodySmall" style={styles.hint}>
+                Coordinators: use the Google account with the email your headteacher added. A new headteacher or supplier can also start here.
+              </Text>
+            </>
+          )}
         </Surface>
       </FadeIn>
     </View>
@@ -291,6 +355,9 @@ function describeAuthError(message: string) {
   }
   if (m.includes('signups not allowed') || m.includes('signup is disabled')) {
     return 'New accounts are switched off. Turn on "Allow new users to sign up" in Supabase (Authentication > Sign In / Providers).';
+  }
+  if (m.includes('rate limit') || m.includes('security purposes')) {
+    return 'Too many emails were sent. Wait a few minutes and try again.';
   }
   if (m.includes('provider is not enabled')) {
     return 'Google sign-in is not turned on for this app yet.';

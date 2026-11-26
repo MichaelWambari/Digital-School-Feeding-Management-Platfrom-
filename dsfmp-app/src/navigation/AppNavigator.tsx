@@ -3,6 +3,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, View } f
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Session } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeContext';
 import { AccountKind, AccountProvider } from '../school/SchoolContext';
@@ -17,6 +18,7 @@ import DistributionScreen from '../screens/DistributionScreen';
 import ReportsScreen from '../screens/ReportsScreen';
 import StaffScreen from '../screens/StaffScreen';
 import VerifyCodeScreen from '../screens/VerifyCodeScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import PermissionsScreen from '../screens/PermissionsScreen';
 import SchoolProfileScreen from '../screens/SchoolProfileScreen';
 import TimetableScreen from '../screens/TimetableScreen';
@@ -85,6 +87,8 @@ export default function AppNavigator() {
   // Whether this login has finished the emailed-code step (Google logins have).
   const [verified, setVerified] = useState<{ loginId: string; ok: boolean } | null>(null);
   const loginId = session ? loginSessionId(session) : null;
+  // Signed in by a "forgot password" link: choose a new password first.
+  const [recovering, setRecovering] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -92,11 +96,30 @@ export default function AppNavigator() {
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true);
+      if (event === 'SIGNED_OUT') setRecovering(false);
     });
 
-    return () => listener.subscription.unsubscribe();
+    // On phones a reset link opens the app at .../reset-password?code=...
+    // (on the web the Supabase client reads the code from the page URL).
+    const openResetLink = async (url: string | null) => {
+      if (!url || !url.includes('reset-password')) return;
+      const code = new URLSearchParams(url.split('?')[1]?.split('#')[0] ?? '').get('code');
+      // Emits PASSWORD_RECOVERY, since the reset was started on this device.
+      if (code) await supabase.auth.exchangeCodeForSession(code);
+    };
+    let linkSubscription: { remove: () => void } | null = null;
+    if (Platform.OS !== 'web') {
+      Linking.getInitialURL().then(openResetLink);
+      linkSubscription = Linking.addEventListener('url', ({ url }) => openResetLink(url));
+    }
+
+    return () => {
+      listener.subscription.unsubscribe();
+      linkSubscription?.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -113,6 +136,14 @@ export default function AppNavigator() {
   }, [loginId]);
 
   if (loading) return null; // swap for a splash screen if you like
+
+  if (session && recovering) {
+    return (
+      <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={Platform.OS !== 'web'}>
+        <ChangePasswordScreen recovery onChanged={() => setRecovering(false)} />
+      </KeyboardAvoidingView>
+    );
+  }
 
   const isVerified = loginId && verified?.loginId === loginId ? verified.ok : null;
   if (session && loginId && isVerified === null) {

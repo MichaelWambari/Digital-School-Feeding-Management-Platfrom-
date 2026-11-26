@@ -8,7 +8,14 @@ import { Button } from '../components/Paper';
 
 // Shown at the first sign-in of a login someone else created (or after a
 // headteacher reset its password), so only the user knows their password.
-export default function ChangePasswordScreen({ onChanged }: { onChanged: () => void }) {
+// Also shown after opening a "forgot password" link (recovery).
+export default function ChangePasswordScreen({
+  onChanged,
+  recovery = false,
+}: {
+  onChanged: () => void;
+  recovery?: boolean;
+}) {
   const { colors, styles } = useThemedStyles(makeStyles);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -31,7 +38,9 @@ export default function ChangePasswordScreen({ onChanged }: { onChanged: () => v
       if (updateError) {
         setError(
           updateError.message.toLowerCase().includes('different')
-            ? 'Choose a password different from the one you were given.'
+            ? recovery
+              ? 'Choose a password different from your old one.'
+              : 'Choose a password different from the one you were given.'
             : updateError.message
         );
         return;
@@ -54,9 +63,13 @@ export default function ChangePasswordScreen({ onChanged }: { onChanged: () => v
       <FadeIn style={styles.content}>
         <View style={styles.brand}>
           <Avatar.Icon size={64} icon="lock-reset" />
-          <Text variant="headlineSmall" style={styles.title}>Choose your password</Text>
+          <Text variant="headlineSmall" style={styles.title}>
+            {recovery ? 'Choose a new password' : 'Choose your password'}
+          </Text>
           <Text variant="bodyMedium" style={styles.subtitle}>
-            You signed in with a password someone gave you. Choose one only you know.
+            {recovery
+              ? 'You opened a password reset link. Choose a new password to finish signing in.'
+              : 'You signed in with a password someone gave you. Choose one only you know.'}
           </Text>
         </View>
 
