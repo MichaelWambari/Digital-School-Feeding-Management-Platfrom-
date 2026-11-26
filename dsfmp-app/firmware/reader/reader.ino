@@ -11,11 +11,20 @@
 // with the LCD, or in SPI mode (SET0 L, SET1 H; PN532_USE_SPI).
 // A card ID typed into the Serial Monitor still counts as a tap,
 // for testing without a card.
+//
+// Offline taps (supabase/fixes/029_offline_scans.sql): while there is
+// no Wi-Fi, or when a request fails on the network, the tap is saved
+// in flash with the time it was made (from the internet clock) and
+// sent once the connection is back, oldest first. Saved taps survive
+// a power cut. Wi-Fi reconnects in the background, so cards are still
+// read during an outage.
 // ============================================================
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
+#include <time.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
@@ -102,7 +111,33 @@ const bool BOARD_LED_RGB = false;
 // repeat reads of the same card for this long.
 const unsigned long REPEAT_TAP_MS = 3000;
 
+// How many offline taps the reader can hold (about a school's worth of
+// one meal; each takes 32 bytes of flash). When full, new taps are refused.
+const int SAVED_TAP_CAPACITY = 120;
+
+// How often to try Wi-Fi again while disconnected.
+const unsigned long WIFI_RETRY_MS = 15000;
+
 // ------------------------------------------
+
+// A tap saved while offline. epoch is the Unix time of the tap, or 0
+// if the clock wasn't set yet; then uptimeS and bootId are used to
+// work it out once the clock is set (only within the same boot).
+struct SavedTap {
+  char card[20];
+  uint32_t epoch;
+  uint32_t uptimeS;
+  uint32_t bootId;
+};
+SavedTap savedTaps[SAVED_TAP_CAPACITY];
+int savedTapCount = 0;
+uint32_t bootId = 0;
+Preferences prefs;
+unsigned long lastSendAttempt = 0;
+unsigned long sendRetryMs = 0;
+unsigned long lastWifiAttempt = 0;
+bool wifiWasConnected = false;
+bool clockStarted = false;
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, 16, 2);
 // The LCD has no "é", so it is drawn as custom character 0.
@@ -157,6 +192,7 @@ void setup() {
     checkLcd();
   }
 
+  loadSavedTaps();
   startNfc();
   connectWifi();
   Serial.println();
@@ -166,11 +202,101 @@ void setup() {
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) connectWifi();
+  maintainWifi();
 
   String card = readCard();
   if (card.length() > 0) {
     handleTap(card);
+    showIdle();
+    return;
+  }
+
+  sendNextSavedTap();
+}
+
+// ---------------- Saved (offline) taps ----------------
+
+// Reads the saved taps from flash and counts this boot.
+void loadSavedTaps() {
+  prefs.begin("dsfmp", false);
+  bootId = prefs.getUInt("boot", 0) + 1;
+  prefs.putUInt("boot", bootId);
+  size_t bytes = prefs.getBytesLength("taps");
+  if (bytes > sizeof(savedTaps)) bytes = 0;  // capacity shrank: start again
+  savedTapCount = bytes / sizeof(SavedTap);
+  if (savedTapCount > 0) prefs.getBytes("taps", savedTaps, savedTapCount * sizeof(SavedTap));
+  if (savedTapCount > 0) Serial.printf("%d saved tap(s) waiting to be sent.\n", savedTapCount);
+}
+
+void storeSavedTaps() {
+  if (savedTapCount == 0) prefs.remove("taps");
+  else prefs.putBytes("taps", savedTaps, savedTapCount * sizeof(SavedTap));
+}
+
+bool clockIsSet() {
+  return time(nullptr) > 1700000000;  // after Nov 2023
+}
+
+// Saves a tap to send later. Returns false if the store is full.
+bool saveTap(const String &card) {
+  if (savedTapCount >= SAVED_TAP_CAPACITY) return false;
+  SavedTap &t = savedTaps[savedTapCount];
+  memset(&t, 0, sizeof(t));
+  strncpy(t.card, card.c_str(), sizeof(t.card) - 1);
+  t.epoch = clockIsSet() ? (uint32_t)time(nullptr) : 0;
+  t.uptimeS = millis() / 1000;
+  t.bootId = bootId;
+  savedTapCount++;
+  storeSavedTaps();
+  return true;
+}
+
+void dropFirstSavedTap() {
+  savedTapCount--;
+  memmove(&savedTaps[0], &savedTaps[1], savedTapCount * sizeof(SavedTap));
+  storeSavedTaps();
+}
+
+// Sends the oldest saved tap, at most one per pass of loop() so cards
+// are still read in between.
+void sendNextSavedTap() {
+  if (savedTapCount == 0 || WiFi.status() != WL_CONNECTED || !clockIsSet()) return;
+  if (millis() - lastSendAttempt < sendRetryMs) return;
+  lastSendAttempt = millis();
+
+  SavedTap &t = savedTaps[0];
+  uint32_t when = t.epoch;
+  if (when == 0) {
+    if (t.bootId != bootId) {
+      // Saved before the clock was set, and the reader restarted since,
+      // so its time can't be worked out.
+      Serial.printf("Saved tap %s has no time (reader restarted); dropped.\n", t.card);
+      dropFirstSavedTap();
+      return;
+    }
+    when = (uint32_t)time(nullptr) - (millis() / 1000 - t.uptimeS);
+  }
+
+  String card = t.card, firstName, error;
+  bool linked = false;
+  bool ok = recordScan(card, when, firstName, error, linked);
+  if (!ok && (error == "network_error" || error.startsWith("http_5"))) {
+    sendRetryMs = 10000;  // try again shortly
+    Serial.printf("Saved tap %s not sent (%s), retrying.\n", card.c_str(), error.c_str());
+    return;
+  }
+  if (!ok && error.startsWith("http_")) {
+    // e.g. the database doesn't have fix 029 yet: keep the tap.
+    sendRetryMs = 60000;
+    Serial.printf("Saved tap %s refused (%s); kept, retrying in a minute.\n", card.c_str(), error.c_str());
+    return;
+  }
+  // Any answer from record_nfc_scan settles the tap, recorded or not.
+  Serial.printf("Saved tap %s sent: %s\n", card.c_str(), ok ? firstName.c_str() : error.c_str());
+  sendRetryMs = 300;
+  dropFirstSavedTap();
+  if (savedTapCount == 0) {
+    Serial.println("All saved taps sent.");
     showIdle();
   }
 }
@@ -260,11 +386,27 @@ void handleTap(const String &card) {
 
   String firstName, error;
   bool linked = false;
+  bool ok = false;
   unsigned long started = millis();
-  bool ok = recordScan(card, firstName, error, linked);
+  if (WiFi.status() == WL_CONNECTED) {
+    ok = recordScan(card, 0, firstName, error, linked);
+  } else {
+    error = "network_error";
+  }
   unsigned long elapsed = millis() - started;
 
-  if (ok && linked) {
+  if (!ok && error == "network_error") {
+    // No connection: keep the tap and send it later.
+    if (saveTap(card)) {
+      Serial.printf("OFFLINE: saved (%d waiting)\n", savedTapCount);
+      showMessage("Saved offline", "Will send later");
+      feedbackSaved();
+    } else {
+      Serial.println("OFFLINE: store full, tap NOT saved");
+      showMessage("Not recorded", "Offline, full");
+      feedback(false);
+    }
+  } else if (ok && linked) {
     // A coordinator was linking this card to a student (fix 024).
     Serial.printf("LINKED to %s (%lu ms)\n", firstName.c_str(), elapsed);
     showMessage("Card linked", firstName);
@@ -283,11 +425,12 @@ void handleTap(const String &card) {
   lastCardAt = millis();
 }
 
-// Calls record_nfc_scan. Returns true on success and sets firstName, and
+// Calls record_nfc_scan. scannedAt is the Unix time of a saved tap, or
+// 0 for a live one. Returns true on success and sets firstName, and
 // linked when the tap linked the card to a student instead of recording
 // a meal; otherwise sets error to the function's error code or an
 // HTTP/network one.
-bool recordScan(const String &card, String &firstName, String &error, bool &linked) {
+bool recordScan(const String &card, uint32_t scannedAt, String &firstName, String &error, bool &linked) {
   WiFiClientSecure client;
   // Skips certificate checks to keep the demo simple. A deployed reader
   // should pin Supabase's root certificate with client.setCACert().
@@ -304,6 +447,14 @@ bool recordScan(const String &card, String &firstName, String &error, bool &link
   body["p_device_id"] = DEVICE_ID;
   body["p_mode"] = "attendance";
   if (DEVICE_SECRET[0] != '\0') body["p_device_secret"] = DEVICE_SECRET;
+  if (scannedAt != 0) {
+    time_t t = scannedAt;
+    struct tm utc;
+    gmtime_r(&t, &utc);
+    char iso[25];
+    strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    body["p_scanned_at"] = iso;
+  }
   String payload;
   serializeJson(body, payload);
 
@@ -346,7 +497,23 @@ String describeError(const String &error) {
   if (error == "card_in_use") return "Card in use";
   if (error == "inactive_school") return "School inactive";
   if (error == "network_error") return "No connection";
+  if (error == "stale_scan") return "Too old";
+  if (error == "bad_scan_time") return "Clock wrong";
   return error.substring(0, 16);
+}
+
+// A tap saved while offline: green LED and two short high beeps.
+void feedbackSaved() {
+  if (!HAS_DISPLAY) {
+    boardLedFeedback(true);
+    return;
+  }
+  digitalWrite(GREEN_LED_PIN, HIGH);
+  tone(BUZZER_PIN, 1500, 80);
+  delay(150);
+  tone(BUZZER_PIN, 1500, 80);
+  delay(600);
+  digitalWrite(GREEN_LED_PIN, LOW);
 }
 
 void feedback(bool ok) {
@@ -367,27 +534,62 @@ void feedback(bool ok) {
   digitalWrite(led, LOW);
 }
 
-void connectWifi() {
-  showMessage("Connecting WiFi", WIFI_SSID);
-  Serial.printf("Connecting to %s", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
+void beginWifi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   // Small ESP32-C3 boards often can't join Wi-Fi at full transmit power;
   // 8.5 dBm is plenty for a router or phone in the same room.
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
-  unsigned long started = millis();
-  while (WiFi.status() != WL_CONNECTED) {
+  lastWifiAttempt = millis();
+}
+
+// At startup: tries Wi-Fi for 15 s, then carries on offline (taps are
+// saved) and maintainWifi() keeps trying in the background.
+void connectWifi() {
+  showMessage("Connecting WiFi", WIFI_SSID);
+  Serial.printf("Connecting to %s", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
+  beginWifi();
+  while (WiFi.status() != WL_CONNECTED && millis() - lastWifiAttempt < WIFI_RETRY_MS) {
     delay(250);
     Serial.print(".");
-    // Every 15 s without a connection, say why and try again.
-    if (millis() - started > 15000) {
-      reportWifiProblem();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-      WiFi.setTxPower(WIFI_POWER_8_5dBm);
-      started = millis();
-    }
   }
+  if (WiFi.status() != WL_CONNECTED) {
+    reportWifiProblem();
+    Serial.println("\nCarrying on offline: taps are saved and sent when Wi-Fi is back.");
+    beginWifi();
+    return;
+  }
+  onWifiConnected();
+}
+
+// Called every pass of loop(): notices a lost or regained connection
+// and retries every WIFI_RETRY_MS without stopping card reads.
+void maintainWifi() {
+  bool connected = WiFi.status() == WL_CONNECTED;
+  if (connected && !wifiWasConnected) {
+    onWifiConnected();
+    showIdle();
+  } else if (!connected && wifiWasConnected) {
+    wifiWasConnected = false;
+    Serial.println("\nWi-Fi lost. Taps will be saved until it is back.");
+    showIdle();
+    beginWifi();
+  } else if (!connected && millis() - lastWifiAttempt > WIFI_RETRY_MS) {
+    WiFi.disconnect();
+    beginWifi();
+  }
+}
+
+void onWifiConnected() {
+  wifiWasConnected = true;
   Serial.printf(" connected, IP %s\n", WiFi.localIP().toString().c_str());
+  if (!clockStarted) {
+    // UTC from the internet; the reader keeps time by itself after that,
+    // also while offline (until it loses power).
+    configTime(0, 0, "pool.ntp.org", "time.google.com");
+    clockStarted = true;
+  }
+  sendRetryMs = 0;
 }
 
 // Prints the Wi-Fi status and whether the network can be seen at all,
@@ -413,7 +615,13 @@ void reportWifiProblem() {
 }
 
 void showIdle() {
-  showMessage("DSFMP reader", "Tap card...");
+  if (WiFi.status() != WL_CONNECTED) {
+    showMessage("Offline " + String(savedTapCount) + " saved", "Tap card...");
+  } else if (savedTapCount > 0) {
+    showMessage("Sending " + String(savedTapCount) + " saved", "Tap card...");
+  } else {
+    showMessage("DSFMP reader", "Tap card...");
+  }
 }
 
 // Without the LEDs, flash the board's own LED: green (or one long

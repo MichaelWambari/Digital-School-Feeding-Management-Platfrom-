@@ -95,3 +95,33 @@ power-cycle the board, and check that SDA and SCL aren't swapped.
 A card held on the reader counts as one tap; it must be taken away for
 3 seconds (`REPEAT_TAP_MS`) before it counts again. Meal windows and the
 HTTPS and offline notes are the same as in the [Wokwi README](../wokwi/README.md).
+
+## Offline taps
+
+If the reader has no Wi-Fi, or a request fails on the network, it doesn't
+lose the tap. It saves the card ID and the time of the tap in flash
+(up to 120 taps, kept through a power cut), shows **Saved offline / Will
+send later**, lights the green LED and beeps twice. While it is offline the
+idle screen reads **Offline N saved**.
+
+Wi-Fi is retried every 15 s in the background, so cards are still read
+during an outage. Once it is back, the saved taps are sent one at a time,
+oldest first, between card reads (**Sending N saved**). The database files
+each one under the meal that was being served when it was tapped
+(`supabase/fixes/029_offline_scans.sql`), so the live database needs fix
+029. Until it has it, saved taps are kept and retried every minute.
+
+Notes:
+
+- The time comes from the internet (NTP) the first time the reader
+  connects, and the ESP32 keeps it after that, also offline. A tap made
+  before the clock was ever set (the reader started without Wi-Fi) is
+  timed from the reader's uptime once the clock is set. If the reader
+  restarts before that, the tap can't be timed and is dropped.
+- Saved taps older than 3 days are refused (`stale_scan`). Sending one twice
+  is harmless (`already_recorded`).
+- A saved tap is not checked while offline, so the student hears the
+  "saved" beep even if the card turns out to be unknown or already used.
+  The result shows up on the Serial Monitor when it is sent, and unknown
+  cards appear on the app's Unknown cards panel as usual.
+- Saved taps never link cards; card linking needs a live connection.
