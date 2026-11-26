@@ -353,6 +353,10 @@ the one added in Staff.
   reset still clears them.
 - Add native libraries with `npx expo install <package>` so their versions
   match the Expo SDK.
+- `npm run check` runs the typecheck and every database test in
+  `supabase/tests/` against a local PGlite database (no Supabase project
+  needed). GitHub Actions runs the same on every push
+  (`.github/workflows/check.yml`).
 
 ## NFC reader simulator
 
