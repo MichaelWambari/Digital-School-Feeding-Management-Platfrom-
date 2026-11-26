@@ -41,6 +41,9 @@ await scan('04AAAA01');
 await scan('04BBBB02');
 await scan('K0000001'); // Kevin's card: known, not listed
 await scan('04CCCC03', 'reader-b1'); // tapped at the other school
+// On a fast machine the taps above can share a millisecond; make the
+// order the test expects certain.
+await q(null, `update nfc_tag_logs set created_at = created_at + interval '1 second' where nfc_tag_id = '04BBBB02'`);
 let list = await unknown();
 ok('unknown cards tapped here are listed, newest first, known cards left out',
   list.length === 2 && list[0].nfc_tag_id === '04BBBB02' && list[1].nfc_tag_id === '04AAAA01', JSON.stringify(list));

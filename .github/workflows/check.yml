@@ -12,8 +12,8 @@ jobs:
       run:
         working-directory: dsfmp-app
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           # Node 24 runs the .ts files the tests import without a build step.
           node-version: 24
